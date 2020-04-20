@@ -51,6 +51,11 @@ import org.apache.iceberg.mr.SerializationUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * CombineHiveInputFormat.AvoidSplitCombination is implemented to correctly delegate InputSplit
+ * creation to this class. See: https://stackoverflow.com/questions/29133275/
+ * custom-inputformat-getsplits-never-called-in-hive
+ */
 public class IcebergInputFormat<T> implements InputFormat<Void, T>, CombineHiveInputFormat.AvoidSplitCombination {
   private static final Logger LOG = LoggerFactory.getLogger(IcebergInputFormat.class);
 
