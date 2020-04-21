@@ -470,6 +470,8 @@ project(':iceberg-hive') {
       exclude group: 'com.google.guava', module: 'guava'
     }
 
+    compileOnly("com.esotericsoftware:kryo:4.0.2:")
+
     testCompile 'junit:junit'
     testCompile("com.klarna:hiverunner:4.1.0") {
       exclude group: 'com.google.protobuf', module: 'protobuf-java'
@@ -519,6 +521,18 @@ project(':iceberg-mr') {
       // These artifacts are shaded and included in the orc-core fat jar
       exclude group: 'com.google.protobuf', module: 'protobuf-java'
       exclude group: 'org.apache.hive', module: 'hive-storage-api'
+    }
+    compileOnly("org.apache.hive:hive-exec::core") {
+      exclude group: 'org.apache.avro', module: 'avro'
+      exclude group: 'org.slf4j', module: 'slf4j-log4j12'
+      exclude group: 'org.pentaho' // missing dependency
+      exclude group: 'org.apache.hive', module: 'hive-llap-tez'
+      exclude group: 'org.apache.logging.log4j'
+      exclude group: 'com.google.protobuf', module: 'protobuf-java'
+      exclude group: 'org.apache.calcite'
+      exclude group: 'org.apache.calcite.avatica'
+      exclude group: 'com.google.code.findbugs', module: 'jsr305'
+      exclude group: 'com.google.guava'
     }
     compile("org.apache.parquet:parquet-avro") {
       exclude group: 'org.apache.avro', module: 'avro'
