@@ -125,7 +125,6 @@ project(':iceberg-api') {
     dependencies {
       exclude (dependency('org.checkerframework:checker-qual'))
       exclude (dependency('org.codehaus.mojo:animal-sniffer-annotations'))
-      exclude (dependency('org.xerial.snappy:snappy-java'))
       exclude (dependency('org.slf4j:slf4j-api'))
     }
 
@@ -169,16 +168,6 @@ project(':iceberg-common') {
       exclude (dependency('org.checkerframework:checker-qual'))
       exclude (dependency('org.codehaus.mojo:animal-sniffer-annotations'))
       exclude (dependency('javax.annotation:javax.annotation-api'))
-      exclude (dependency('org.apache.orc:orc-core'))
-      exclude (dependency('org.jetbrains:annotations'))
-      exclude (dependency('org.apache.iceberg:iceberg-api'))
-      exclude (dependency('io.airlift:aircompressor'))
-      exclude (dependency('org.apache.parquet:parquet-common'))
-      exclude (dependency('org.apache.iceberg:iceberg-common'))
-      exclude (dependency('commons-pool:commons-pool'))
-      exclude (dependency('org.apache.yetus:audience-annotations'))
-      exclude (dependency('org.apache.parquet:parquet-encoding'))
-      exclude (dependency('org.apache.orc:orc-shims'))
       exclude (dependency('org.slf4j:slf4j-api'))
     }
 
@@ -239,19 +228,8 @@ project(':iceberg-core') {
       exclude (dependency('org.slf4j:slf4j-api'))
       exclude (dependency('org.codehaus.mojo:animal-sniffer-annotations'))
       exclude (dependency('org.apache.commons:commons-compress'))
-      exclude (dependency('org.codehaus.mojo:animal-sniffer-annotations'))
-      exclude (dependency('org.xerial.snappy:snappy-java'))
-      exclude (dependency('javax.annotation:javax.annotation-api'))
-      exclude (dependency('org.apache.orc:orc-core'))
-      exclude (dependency('org.jetbrains:annotations'))
       exclude (dependency('org.apache.iceberg:iceberg-api'))
-      exclude (dependency('io.airlift:aircompressor'))
-      exclude (dependency('org.apache.parquet:parquet-common'))
       exclude (dependency('org.apache.iceberg:iceberg-common'))
-      exclude (dependency('commons-pool:commons-pool'))
-      exclude (dependency('org.apache.yetus:audience-annotations'))
-      exclude (dependency('org.apache.parquet:parquet-encoding'))
-      exclude (dependency('org.apache.orc:orc-shims'))
     }
 
     zip64 true
@@ -354,7 +332,6 @@ project(':iceberg-data') {
       exclude (dependency('org.apache.iceberg:iceberg-api'))
       exclude (dependency('io.airlift:aircompressor'))
       exclude (dependency('org.apache.parquet:parquet-common'))
-      exclude (dependency('org.apache.iceberg:iceberg-common'))
       exclude (dependency('commons-pool:commons-pool'))
       exclude (dependency('org.apache.yetus:audience-annotations'))
       exclude (dependency('org.apache.parquet:parquet-encoding'))
@@ -562,19 +539,14 @@ project(':iceberg-mr') {
       exclude (dependency('org.apache.iceberg:iceberg-core'))
       exclude (dependency('org.apache.iceberg:iceberg-api'))
       exclude (dependency('org.apache.iceberg:iceberg-orc'))
-      exclude (dependency('javax.annotation:javax.annotation-api'))
-      exclude (dependency('io.airlift:aircompressor'))
+      exclude (dependency('org.apache.iceberg:iceberg-common'))
       exclude (dependency('org.apache.parquet:parquet-common'))
       exclude (dependency('commons-pool:commons-pool'))
       exclude (dependency('org.apache.parquet:parquet-encoding'))
-      exclude (dependency('org.apache.orc:orc-shims'))
       exclude (dependency('org.xerial.snappy:snappy-java'))
-      exclude (dependency('org.apache.orc:orc-core'))
-      exclude (dependency('org.codehaus.mojo:animal-sniffer-annotations'))
       exclude (dependency('org.apache.yetus:audience-annotations'))
-      exclude (dependency('org.codehaus.mojo:animal-sniffer-annotations'))
+      exclude (dependency('javax.annotation:javax.annotation-api'))
       exclude (dependency('org.slf4j:slf4j-api'))
-      exclude (dependency('org.apache.iceberg:iceberg-common'))
     }
 
     // Relocate dependencies to avoid conflicts
@@ -642,6 +614,8 @@ project(':iceberg-orc') {
       exclude (dependency('com.fasterxml.jackson.core:jackson-core'))
       exclude (dependency('org.codehaus.mojo:animal-sniffer-annotations'))
       exclude (dependency('org.apache.iceberg:iceberg-common'))
+      exclude (dependency('org.apache.iceberg:iceberg-core'))
+      exclude (dependency('org.apache.iceberg:iceberg-api'))
       exclude (dependency('org.apache.avro:avro'))
       exclude (dependency('org.jetbrains:annotations'))
       exclude (dependency('org.checkerframework:checker-qual'))
@@ -649,23 +623,7 @@ project(':iceberg-orc') {
       exclude (dependency('com.github.ben-manes.caffeine:caffeine'))
       exclude (dependency('com.fasterxml.jackson.core:jackson-annotations'))
       exclude (dependency('org.apache.commons:commons-compress'))
-      exclude (dependency('org.apache.orc:orc-shims'))
-      exclude (dependency('org.apache.iceberg:iceberg-core'))
       exclude (dependency('org.slf4j:slf4j-api'))
-      exclude (dependency('com.fasterxml.jackson.core:jackson-databind'))
-      exclude (dependency('org.apache.orc:orc-core'))
-      exclude (dependency('org.apache.iceberg:iceberg-api'))
-      exclude (dependency('org.xerial.snappy:snappy-java'))
-      exclude (dependency('javax.annotation:javax.annotation-api'))
-      exclude (dependency('org.jetbrains:annotations'))
-      exclude (dependency('org.apache.iceberg:iceberg-api'))
-      exclude (dependency('io.airlift:aircompressor'))
-      exclude (dependency('org.apache.parquet:parquet-common'))
-      exclude (dependency('org.apache.iceberg:iceberg-common'))
-      exclude (dependency('commons-pool:commons-pool'))
-      exclude (dependency('org.apache.yetus:audience-annotations'))
-      exclude (dependency('org.apache.parquet:parquet-encoding'))
-
     }
 
     // include the LICENSE and NOTICE files for the shaded Jar
@@ -806,16 +764,6 @@ project(':iceberg-parquet') {
       exclude (dependency('org.apache.iceberg:iceberg-core'))
       exclude (dependency('org.apache.iceberg:iceberg-api'))
       exclude (dependency('org.apache.iceberg:iceberg-common'))
-      exclude (dependency('org.xerial.snappy:snappy-java'))
-      exclude (dependency('javax.annotation:javax.annotation-api'))
-      exclude (dependency('org.apache.orc:orc-core'))
-      exclude (dependency('org.jetbrains:annotations'))
-      exclude (dependency('org.apache.iceberg:iceberg-api'))
-      exclude (dependency('io.airlift:aircompressor'))
-      exclude (dependency('org.apache.parquet:parquet-common'))
-      exclude (dependency('commons-pool:commons-pool'))
-      exclude (dependency('org.apache.yetus:audience-annotations'))
-      exclude (dependency('org.apache.orc:orc-shims'))
     }
 
     zip64 true
