@@ -45,7 +45,7 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.StructLike;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
-import org.apache.iceberg.TestHelpers;
+import org.apache.iceberg.TestHelpers.Row;
 import org.apache.iceberg.avro.Avro;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.TableIdentifier;
@@ -142,7 +142,7 @@ public class TestIcebergInputFormat {
                                 location.toString());
     List<Record> expectedRecords = RandomGenericData.generate(table.schema(), 1, 0L);
     expectedRecords.get(0).set(2, "2020-03-20");
-    DataFile dataFile = writeFile(table, TestHelpers.Row.of("2020-03-20", 0), format, expectedRecords);
+    DataFile dataFile = writeFile(table, Row.of("2020-03-20", 0), format, expectedRecords);
     table.newAppend()
          .appendFile(dataFile)
          .commit();
@@ -163,8 +163,8 @@ public class TestIcebergInputFormat {
     List<Record> expectedRecords = RandomGenericData.generate(table.schema(), 2, 0L);
     expectedRecords.get(0).set(2, "2020-03-20");
     expectedRecords.get(1).set(2, "2020-03-20");
-    DataFile dataFile1 = writeFile(table, TestHelpers.Row.of("2020-03-20", 0), format, expectedRecords);
-    DataFile dataFile2 = writeFile(table, TestHelpers.Row.of("2020-03-21", 0), format,
+    DataFile dataFile1 = writeFile(table, Row.of("2020-03-20", 0), format, expectedRecords);
+    DataFile dataFile2 = writeFile(table, Row.of("2020-03-21", 0), format,
                                    RandomGenericData.generate(table.schema(), 2, 0L));
     table.newAppend()
          .appendFile(dataFile1)
@@ -193,8 +193,8 @@ public class TestIcebergInputFormat {
     List<Record> expectedRecords = new ArrayList<>();
     expectedRecords.add(writeRecords.get(0));
 
-    DataFile dataFile1 = writeFile(table, TestHelpers.Row.of("2020-03-20", 0), format, writeRecords);
-    DataFile dataFile2 = writeFile(table, TestHelpers.Row.of("2020-03-21", 0), format,
+    DataFile dataFile1 = writeFile(table, Row.of("2020-03-20", 0), format, writeRecords);
+    DataFile dataFile2 = writeFile(table, Row.of("2020-03-21", 0), format,
         RandomGenericData.generate(table.schema(), 2, 0L));
     table.newAppend()
          .appendFile(dataFile1)
@@ -229,7 +229,7 @@ public class TestIcebergInputFormat {
     expectedRecords.get(0).set(2, "2020-03-20");
     expectedRecords.get(1).set(2, "2020-03-20");
 
-    DataFile dataFile1 = writeFile(table, TestHelpers.Row.of("2020-03-20", 0), format, expectedRecords);
+    DataFile dataFile1 = writeFile(table, Row.of("2020-03-20", 0), format, expectedRecords);
     table.newAppend()
         .appendFile(dataFile1)
         .commit();
@@ -266,7 +266,7 @@ public class TestIcebergInputFormat {
                                 ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT, format.name()),
                                 location.toString());
     List<Record> inputRecords = RandomGenericData.generate(table.schema(), 1, 0L);
-    DataFile dataFile = writeFile(table, TestHelpers.Row.of("2020-03-20", 0), format, inputRecords);
+    DataFile dataFile = writeFile(table, Row.of("2020-03-20", 0), format, inputRecords);
     table.newAppend()
          .appendFile(dataFile)
          .commit();
@@ -305,7 +305,7 @@ public class TestIcebergInputFormat {
     for (Record record : inputRecords) {
       record.set(1, "2020-03-2" + idx);
       record.set(2, idx.toString());
-      append.appendFile(writeFile(table, TestHelpers.Row.of("2020-03-2" + idx, idx.toString()), format,
+      append.appendFile(writeFile(table, Row.of("2020-03-2" + idx, idx.toString()), format,
           ImmutableList.of(record)));
       idx += 1;
     }
@@ -433,7 +433,7 @@ public class TestIcebergInputFormat {
                                       ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT, format.name()));
     List<Record> expectedRecords = RandomGenericData.generate(table.schema(), 1, 0L);
     expectedRecords.get(0).set(2, "2020-03-20");
-    DataFile dataFile = writeFile(table, TestHelpers.Row.of("2020-03-20", 0), format, expectedRecords);
+    DataFile dataFile = writeFile(table, Row.of("2020-03-20", 0), format, expectedRecords);
     table.newAppend()
          .appendFile(dataFile)
          .commit();
