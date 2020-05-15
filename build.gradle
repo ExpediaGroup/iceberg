@@ -267,7 +267,6 @@ project(':iceberg-hive') {
 }
 
 project(':iceberg-mr') {
-
   dependencies {
     compile project(':iceberg-api')
     compile project(':iceberg-core')

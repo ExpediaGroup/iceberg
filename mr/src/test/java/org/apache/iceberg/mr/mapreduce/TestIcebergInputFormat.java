@@ -305,8 +305,7 @@ public class TestIcebergInputFormat {
     for (Record record : inputRecords) {
       record.set(1, "2020-03-2" + idx);
       record.set(2, idx.toString());
-      append.appendFile(writeFile(table, Row.of("2020-03-2" + idx, idx.toString()), format,
-          ImmutableList.of(record)));
+      append.appendFile(writeFile(table, Row.of("2020-03-2" + idx, idx.toString()), format, ImmutableList.of(record)));
       idx += 1;
     }
     append.commit();
