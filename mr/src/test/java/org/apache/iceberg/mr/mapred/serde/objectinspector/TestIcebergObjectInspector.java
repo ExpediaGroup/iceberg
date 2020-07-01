@@ -46,6 +46,7 @@ public class TestIcebergObjectInspector {
           required(id++, "date_field", Types.DateType.get(), "date comment"),
           required(id++, "decimal_field", Types.DecimalType.of(38, 18), "decimal comment"),
           required(id++, "double_field", Types.DoubleType.get(), "double comment"),
+          required(id++, "fixed_field", Types.FixedType.ofLength(3), "fixed comment"),
           required(id++, "float_field", Types.FloatType.get(), "float comment"),
           required(id++, "integer_field", Types.IntegerType.get(), "integer comment"),
           required(id++, "long_field", Types.LongType.get(), "long comment"),
@@ -79,7 +80,7 @@ public class TestIcebergObjectInspector {
     Assert.assertEquals(id++, binaryField.getFieldID());
     Assert.assertEquals("binary_field", binaryField.getFieldName());
     Assert.assertEquals("binary comment", binaryField.getFieldComment());
-    Assert.assertEquals(IcebergBinaryObjectInspector.get(), binaryField.getFieldObjectInspector());
+    Assert.assertEquals(IcebergBinaryObjectInspector.byteBuffer(), binaryField.getFieldObjectInspector());
 
     // boolean
     StructField booleanField = soi.getStructFieldRef("boolean_field");
@@ -108,6 +109,13 @@ public class TestIcebergObjectInspector {
     Assert.assertEquals("double_field", doubleField.getFieldName());
     Assert.assertEquals("double comment", doubleField.getFieldComment());
     Assert.assertEquals(getPrimitiveObjectInspector(double.class), doubleField.getFieldObjectInspector());
+
+    // fixed
+    StructField fixedField = soi.getStructFieldRef("fixed_field");
+    Assert.assertEquals(id++, fixedField.getFieldID());
+    Assert.assertEquals("fixed_field", fixedField.getFieldName());
+    Assert.assertEquals("fixed comment", fixedField.getFieldComment());
+    Assert.assertEquals(IcebergBinaryObjectInspector.byteArray(), fixedField.getFieldObjectInspector());
 
     // float
     StructField floatField = soi.getStructFieldRef("float_field");
@@ -191,10 +199,6 @@ public class TestIcebergObjectInspector {
 
   @Test
   public void testIcebergObjectInspectorUnsupportedTypes() {
-    AssertHelpers.assertThrows(
-        "Hive does not support fixed type", IllegalArgumentException.class, "FIXED type is not supported",
-        () -> IcebergObjectInspector.create(required(1, "fixed_field", Types.FixedType.ofLength(1))));
-
     AssertHelpers.assertThrows(
         "Hive does not support time type", IllegalArgumentException.class, "TIME type is not supported",
         () -> IcebergObjectInspector.create(required(1, "time_field", Types.TimeType.get())));
