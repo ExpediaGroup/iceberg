@@ -89,6 +89,7 @@ public final class IcebergObjectInspector extends TypeUtil.SchemaVisitor<ObjectI
         primitiveTypeInfo = TypeInfoFactory.longTypeInfo;
         break;
       case STRING:
+      case UUID:
         primitiveTypeInfo = TypeInfoFactory.stringTypeInfo;
         break;
       case TIMESTAMP:
@@ -97,7 +98,6 @@ public final class IcebergObjectInspector extends TypeUtil.SchemaVisitor<ObjectI
 
       case FIXED:
       case TIME:
-      case UUID:
       default:
         throw new IllegalArgumentException(primitiveType.typeId() + " type is not supported");
     }

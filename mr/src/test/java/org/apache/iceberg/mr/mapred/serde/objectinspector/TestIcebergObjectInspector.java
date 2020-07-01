@@ -52,6 +52,7 @@ public class TestIcebergObjectInspector {
           required(id++, "string_field", Types.StringType.get(), "string comment"),
           required(id++, "timestamp_field", Types.TimestampType.withoutZone(), "timestamp comment"),
           required(id++, "timestamptz_field", Types.TimestampType.withZone(), "timestamptz comment"),
+          required(id++, "uuid_field", Types.UUIDType.get(), "uuid comment"),
           required(id++, "list_field",
                   Types.ListType.ofRequired(id++, Types.StringType.get()), "list comment"),
           required(id++, "map_field",
@@ -150,6 +151,13 @@ public class TestIcebergObjectInspector {
     Assert.assertEquals("timestamptz comment", timestampTzField.getFieldComment());
     Assert.assertEquals(IcebergTimestampObjectInspector.get(true), timestampTzField.getFieldObjectInspector());
 
+    // UUID
+    StructField uuidField = soi.getStructFieldRef("uuid_field");
+    Assert.assertEquals(id++, uuidField.getFieldID());
+    Assert.assertEquals("uuid_field", uuidField.getFieldName());
+    Assert.assertEquals("uuid comment", uuidField.getFieldComment());
+    Assert.assertEquals(getPrimitiveObjectInspector(String.class), uuidField.getFieldObjectInspector());
+
     // list
     StructField listField = soi.getStructFieldRef("list_field");
     Assert.assertEquals(id++, listField.getFieldID());
@@ -190,10 +198,6 @@ public class TestIcebergObjectInspector {
     AssertHelpers.assertThrows(
         "Hive does not support time type", IllegalArgumentException.class, "TIME type is not supported",
         () -> IcebergObjectInspector.create(required(1, "time_field", Types.TimeType.get())));
-
-    AssertHelpers.assertThrows(
-        "Hive does not support UUID type", IllegalArgumentException.class, "UUID type is not supported",
-        () -> IcebergObjectInspector.create(required(1, "uuid_field", Types.UUIDType.get())));
   }
 
   private static ObjectInspector getPrimitiveObjectInspector(Class<?> clazz) {
