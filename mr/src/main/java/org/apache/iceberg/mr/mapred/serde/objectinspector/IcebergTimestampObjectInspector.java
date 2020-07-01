@@ -24,11 +24,12 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.function.Function;
 import org.apache.hadoop.hive.serde2.io.TimestampWritable;
+import org.apache.hadoop.hive.serde2.objectinspector.primitive.AbstractPrimitiveJavaObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.TimestampObjectInspector;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 
-public final class IcebergTimestampObjectInspector extends IcebergPrimitiveObjectInspector
-        implements TimestampObjectInspector {
+public final class IcebergTimestampObjectInspector extends AbstractPrimitiveJavaObjectInspector
+                                                   implements TimestampObjectInspector {
 
   private static final IcebergTimestampObjectInspector INSTANCE_WITH_ZONE =
           new IcebergTimestampObjectInspector(o -> ((OffsetDateTime) o).toLocalDateTime());

@@ -21,11 +21,12 @@ package org.apache.iceberg.mr.mapred.serde.objectinspector;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import org.apache.hadoop.hive.serde2.objectinspector.primitive.AbstractPrimitiveJavaObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.BinaryObjectInspector;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.apache.hadoop.io.BytesWritable;
 
-public final class IcebergBinaryObjectInspector extends IcebergPrimitiveObjectInspector
+public final class IcebergBinaryObjectInspector extends AbstractPrimitiveJavaObjectInspector
                                                 implements BinaryObjectInspector {
 
   private static final IcebergBinaryObjectInspector INSTANCE = new IcebergBinaryObjectInspector();
