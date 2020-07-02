@@ -50,15 +50,12 @@ public class IcebergWritable implements Writable {
     return record;
   }
 
-  public void setRecord(Record record) {
-    this.record = record;
-  }
-
   public Schema schema() {
     return schema;
   }
 
-  public void setSchema(Schema schema) {
+  @SuppressWarnings("checkstyle:HiddenField")
+  public void wrapSchema(Schema schema) {
     this.schema = schema;
   }
 

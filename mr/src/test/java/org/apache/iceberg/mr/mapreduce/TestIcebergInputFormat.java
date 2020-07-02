@@ -34,6 +34,7 @@ import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.TaskAttemptID;
 import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl;
 import org.apache.iceberg.AppendFiles;
+import org.apache.iceberg.AssertHelpers;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.PartitionSpec;
@@ -206,6 +207,47 @@ public class TestIcebergInputFormat {
   }
 
   @Test
+  public void testFailedResidualFiltering() throws Exception {
+    File location = temp.newFolder(format.name());
+    Assert.assertTrue(location.delete());
+    Table table = tables.create(SCHEMA, SPEC,
+        ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT, format.name()),
+        location.toString());
+    List<Record> expectedRecords = RandomGenericData.generate(table.schema(), 2, 0L);
+    expectedRecords.get(0).set(2, "2020-03-20");
+    expectedRecords.get(1).set(2, "2020-03-20");
+
+    DataFile dataFile1 = writeFile(temp.newFile(), table, Row.of("2020-03-20", 0), format, expectedRecords);
+    table.newAppend()
+        .appendFile(dataFile1)
+        .commit();
+
+    Job jobShouldFail1 = Job.getInstance(conf);
+    InputFormatConfig.ConfigBuilder configBuilder = IcebergInputFormat.configure(jobShouldFail1);
+    configBuilder.useHiveRows().readFrom(location.toString())
+        .schema(table.schema())
+        .filter(Expressions.and(
+            Expressions.equal("date", "2020-03-20"),
+            Expressions.equal("id", 0)));
+    AssertHelpers.assertThrows(
+        "Residuals are not evaluated today for Iceberg Generics In memory model of HIVE",
+        UnsupportedOperationException.class, "Filter expression ref(name=\"id\") == 0 is not completely satisfied.",
+        () -> validate(jobShouldFail1, expectedRecords));
+
+    Job jobShouldFail2 = Job.getInstance(conf);
+    configBuilder = IcebergInputFormat.configure(jobShouldFail2);
+    configBuilder.usePigTuples().readFrom(location.toString())
+        .schema(table.schema())
+        .filter(Expressions.and(
+            Expressions.equal("date", "2020-03-20"),
+            Expressions.equal("id", 0)));
+    AssertHelpers.assertThrows(
+        "Residuals are not evaluated today for Iceberg Generics In memory model of PIG",
+        UnsupportedOperationException.class, "Filter expression ref(name=\"id\") == 0 is not completely satisfied.",
+        () -> validate(jobShouldFail2, expectedRecords));
+  }
+
+  @Test
   public void testProjection() throws Exception {
     File location = temp.newFolder(format.name());
     Assert.assertTrue(location.delete());
@@ -222,9 +264,9 @@ public class TestIcebergInputFormat {
     Job job = Job.getInstance(conf);
     InputFormatConfig.ConfigBuilder configBuilder = IcebergInputFormat.configure(job);
     configBuilder
-            .readFrom(location.toString())
-            .project(projectedSchema)
-            .schema(table.schema());
+        .schema(table.schema())
+        .readFrom(location.toString())
+        .project(projectedSchema);
     List<Record> outputRecords = readRecords(job.getConfiguration());
     Assert.assertEquals(inputRecords.size(), outputRecords.size());
     Assert.assertEquals(projectedSchema.asStruct(), outputRecords.get(0).struct());
@@ -310,13 +352,13 @@ public class TestIcebergInputFormat {
   }
 
   private void validateIdentityPartitionProjections(
-          String tablePath, Schema tableSchema, Schema projectedSchema, List<Record> inputRecords) throws Exception {
+      String tablePath, Schema tableSchema, Schema projectedSchema, List<Record> inputRecords) throws Exception {
     Job job = Job.getInstance(conf);
     InputFormatConfig.ConfigBuilder configBuilder = IcebergInputFormat.configure(job);
     configBuilder
-            .readFrom(tablePath)
-            .schema(tableSchema)
-            .project(projectedSchema);
+        .schema(tableSchema)
+        .readFrom(tablePath)
+        .project(projectedSchema);
     List<Record> actualRecords = readRecords(job.getConfiguration());
 
     Set<String> fieldNames = TypeUtil.indexByName(projectedSchema.asStruct()).keySet();
@@ -352,9 +394,9 @@ public class TestIcebergInputFormat {
     Job job = Job.getInstance(conf);
     InputFormatConfig.ConfigBuilder configBuilder = IcebergInputFormat.configure(job);
     configBuilder
-            .schema(table.schema())
-            .readFrom(location.toString())
-            .snapshotId(snapshotId);
+        .schema(table.schema())
+        .readFrom(location.toString())
+        .snapshotId(snapshotId);
 
     validate(job, expectedRecords);
   }
@@ -410,9 +452,9 @@ public class TestIcebergInputFormat {
     Job job = Job.getInstance(conf);
     InputFormatConfig.ConfigBuilder configBuilder = IcebergInputFormat.configure(job);
     configBuilder
-            .catalogFunc(HadoopCatalogFunc.class)
-            .schema(table.schema())
-            .readFrom(tableIdentifier.toString());
+        .catalogFunc(HadoopCatalogFunc.class)
+        .schema(table.schema())
+        .readFrom(tableIdentifier.toString());
     validate(job, expectedRecords);
   }
 

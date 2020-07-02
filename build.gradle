@@ -79,8 +79,7 @@ subprojects {
 
     compileClasspath {
       // do not exclude Guava so the bundle project can reference classes.
-      // the Spark module is also excluded because this breaks the Scala compiler
-      if (project.name != 'iceberg-bundled-guava' && project.name != 'iceberg-spark' && project.name != 'iceberg-spark2') {
+      if (project.name != 'iceberg-bundled-guava') {
         exclude group: 'com.google.guava', module: 'guava'
       }
     }
@@ -262,6 +261,9 @@ project(':iceberg-flink') {
     testCompile("org.apache.flink:flink-test-utils_2.12") {
       exclude group: "org.apache.curator", module: 'curator-test'
     }
+
+    testCompile project(path: ':iceberg-api', configuration: 'testArtifacts')
+    testCompile project(path: ':iceberg-data', configuration: 'testArtifacts')
   }
 }
 
@@ -439,16 +441,7 @@ project(':iceberg-arrow') {
 }
 
 project(':iceberg-spark') {
-  apply plugin: 'scala'
-
   configurations.all {
-    // this is needed to avoid a problem with dependency locking. it was
-    // suggested as a work-around here:
-    //  https://github.com/gradle/gradle/issues/6750
-    if (name.startsWith("incrementalScalaAnalysis")) {
-      extendsFrom = []
-    }
-
     resolutionStrategy {
       // Spark 2.4.4 can only use the below datanucleus version, the versions introduced
       // by Hive 2.3.6 will meet lots of unexpected issues, so here force to use the versions
@@ -498,16 +491,8 @@ project(':iceberg-spark') {
 }
 
 project(':iceberg-spark2') {
-  apply plugin: 'scala'
 
   configurations.all {
-    // this is needed to avoid a problem with dependency locking. it was
-    // suggested as a work-around here:
-    //  https://github.com/gradle/gradle/issues/6750
-    if (name.startsWith("incrementalScalaAnalysis")) {
-      extendsFrom = []
-    }
-
     resolutionStrategy {
       // Spark 2.4.4 can only use the below datanucleus version, the versions introduced
       // by Hive 2.3.6 will meet lots of unexpected issues, so here force to use the versions
@@ -573,6 +558,7 @@ project(':iceberg-spark3') {
     compileOnly "org.apache.avro:avro"
     compileOnly("org.apache.spark:spark-hive_2.12") {
       exclude group: 'org.apache.avro', module: 'avro'
+      exclude group: 'org.apache.arrow'
     }
 
     testCompile project(path: ':iceberg-spark', configuration: 'testArtifacts')

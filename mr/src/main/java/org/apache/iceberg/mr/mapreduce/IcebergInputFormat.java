@@ -61,12 +61,6 @@ public class IcebergInputFormat<T> extends InputFormat<Void, T> {
 
   private transient List<InputSplit> splits;
 
-  private enum InMemoryDataModel {
-    PIG,
-    HIVE,
-    GENERIC // Default data model is of Iceberg Generics
-  }
-
   /**
    * Configures the {@code Job} to use the {@code IcebergInputFormat} and
    * returns a helper to add further configuration.
@@ -91,10 +85,12 @@ public class IcebergInputFormat<T> extends InputFormat<Void, T> {
 
     splits = Lists.newArrayList();
     boolean applyResidual = !conf.getBoolean(InputFormatConfig.SKIP_RESIDUAL_FILTERING, false);
-    InMemoryDataModel model = conf.getEnum(InputFormatConfig.IN_MEMORY_DATA_MODEL, InMemoryDataModel.GENERIC);
+    InputFormatConfig.InMemoryDataModel model = conf.getEnum(InputFormatConfig.IN_MEMORY_DATA_MODEL,
+            InputFormatConfig.InMemoryDataModel.GENERIC);
     try (CloseableIterable<CombinedScanTask> tasksIterable = scan.planTasks()) {
       tasksIterable.forEach(task -> {
-        if (applyResidual && (model == InMemoryDataModel.HIVE || model == InMemoryDataModel.PIG)) {
+        if (applyResidual && (model == InputFormatConfig.InMemoryDataModel.HIVE ||
+            model == InputFormatConfig.InMemoryDataModel.PIG)) {
           //TODO: We do not support residual evaluation for HIVE and PIG in memory data model yet
           checkResiduals(task);
         }
