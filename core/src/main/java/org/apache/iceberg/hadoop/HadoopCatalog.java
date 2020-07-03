@@ -71,9 +71,27 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
   private static final Joiner SLASH = Joiner.on("/");
   private static final PathFilter TABLE_FILTER = path -> path.getName().endsWith(TABLE_METADATA_FILE_EXTENSION);
 
+  private final String catalogName;
   private final Configuration conf;
   private final String warehouseLocation;
   private final FileSystem fs;
+
+  /**
+   * The constructor of the HadoopCatalog. It uses the passed location as its warehouse directory.
+   *
+   * @param name The catalog name
+   * @param conf The Hadoop configuration
+   * @param warehouseLocation The location used as warehouse directory
+   */
+  public HadoopCatalog(String name, Configuration conf, String warehouseLocation) {
+    Preconditions.checkArgument(warehouseLocation != null && !warehouseLocation.equals(""),
+        "no location provided for warehouse");
+
+    this.catalogName = name;
+    this.conf = conf;
+    this.warehouseLocation = warehouseLocation.replaceAll("/*$", "");
+    this.fs = Util.getFs(new Path(warehouseLocation), conf);
+  }
 
   /**
    * The constructor of the HadoopCatalog. It uses the passed location as its warehouse directory.
@@ -82,12 +100,7 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
    * @param warehouseLocation The location used as warehouse directory
    */
   public HadoopCatalog(Configuration conf, String warehouseLocation) {
-    Preconditions.checkArgument(warehouseLocation != null && !warehouseLocation.equals(""),
-        "no location provided for warehouse");
-
-    this.conf = conf;
-    this.warehouseLocation = warehouseLocation.replaceAll("/*$", "");
-    this.fs = Util.getFs(new Path(warehouseLocation), conf);
+    this("hadoop", conf, warehouseLocation);
   }
 
   /**
@@ -98,14 +111,12 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
    * @param conf The Hadoop configuration
    */
   public HadoopCatalog(Configuration conf) {
-    this.conf = conf;
-    this.warehouseLocation = conf.get("fs.defaultFS") + "/" + ICEBERG_HADOOP_WAREHOUSE_BASE;
-    this.fs = Util.getFs(new Path(warehouseLocation), conf);
+    this("hadoop", conf, conf.get("fs.defaultFS") + "/" + ICEBERG_HADOOP_WAREHOUSE_BASE);
   }
 
   @Override
   protected String name() {
-    return "hadoop";
+    return catalogName;
   }
 
   @Override
@@ -214,13 +225,13 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
         !namespace.isEmpty(),
         "Cannot create namespace with invalid name: %s", namespace);
     if (!meta.isEmpty()) {
-      throw new UnsupportedOperationException("Cannot create namespace " + namespace + " : metadata is not supported");
+      throw new UnsupportedOperationException("Cannot create namespace " + namespace + ": metadata is not supported");
     }
 
     Path nsPath = new Path(warehouseLocation, SLASH.join(namespace.levels()));
 
     if (isNamespace(nsPath)) {
-      throw new AlreadyExistsException("Namespace '%s' already exists!", namespace);
+      throw new AlreadyExistsException("Namespace already exists: %s", namespace);
     }
 
     try {
