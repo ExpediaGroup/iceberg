@@ -19,6 +19,9 @@
 
 package org.apache.iceberg.aws.s3;
 
+import java.util.Map;
+import org.apache.iceberg.aws.AwsClientUtil;
+import org.apache.iceberg.aws.AwsProperties;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.io.OutputFile;
@@ -29,28 +32,37 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 
 /**
- * FileIO implementation backed by S3.  Locations used must follow the conventions for URIs (e.g. s3://bucket/path/..).
+ * FileIO implementation backed by S3.
+ * Locations used must follow the conventions for S3 URIs (e.g. s3://bucket/path...).
+ * See {@link S3URI#VALID_SCHEMES} for the list of supported S3 URI schemes.
  */
 public class S3FileIO implements FileIO {
   private final SerializableSupplier<S3Client> s3;
+  private AwsProperties awsProperties;
+
   private transient S3Client client;
 
   public S3FileIO() {
-    this.s3 = S3Client::create;
+    this(AwsClientUtil::defaultS3Client);
   }
 
   public S3FileIO(SerializableSupplier<S3Client> s3) {
+    this(s3, new AwsProperties());
+  }
+
+  public S3FileIO(SerializableSupplier<S3Client> s3, AwsProperties awsProperties) {
     this.s3 = s3;
+    this.awsProperties = awsProperties;
   }
 
   @Override
   public InputFile newInputFile(String path) {
-    return new S3InputFile(client(), new S3URI(path));
+    return new S3InputFile(client(), new S3URI(path), awsProperties);
   }
 
   @Override
   public OutputFile newOutputFile(String path) {
-    return new S3OutputFile(client(), new S3URI(path));
+    return new S3OutputFile(client(), new S3URI(path), awsProperties);
   }
 
   @Override
@@ -69,5 +81,10 @@ public class S3FileIO implements FileIO {
       client = s3.get();
     }
     return client;
+  }
+
+  @Override
+  public void initialize(Map<String, String> properties) {
+    this.awsProperties = new AwsProperties(properties);
   }
 }
