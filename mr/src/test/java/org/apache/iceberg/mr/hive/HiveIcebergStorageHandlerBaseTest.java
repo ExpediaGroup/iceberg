@@ -157,6 +157,11 @@ public abstract class HiveIcebergStorageHandlerBaseTest {
     shell.setHiveSessionValue("hive.execution.engine", executionEngine);
     shell.setHiveSessionValue("hive.jar.directory", temp.getRoot().getAbsolutePath());
     shell.setHiveSessionValue("tez.staging-dir", temp.getRoot().getAbsolutePath());
+    // temporarily disabling vectorization in Tez, since it doesn't work with projection pruning (fix: TEZ-4248)
+    // TODO: remove this once TEZ-4248 has been released and the Tez dependencies updated here
+    if (executionEngine.equals("tez")) {
+      shell.setHiveSessionValue("hive.vectorized.execution.enabled", "false");
+    }
   }
 
   @After
@@ -190,12 +195,13 @@ public abstract class HiveIcebergStorageHandlerBaseTest {
     Assert.assertArrayEquals(new Object[] {2L, "Trudy", "Pink"}, rows.get(2));
 
     // Adding the ORDER BY clause will cause Hive to spawn a local MR job this time.
-    List<Object[]> descRows = shell.executeStatement("SELECT * FROM default.customers ORDER BY customer_id DESC");
+    List<Object[]> descRows =
+        shell.executeStatement("SELECT first_name, customer_id FROM default.customers ORDER BY customer_id DESC");
 
     Assert.assertEquals(3, descRows.size());
-    Assert.assertArrayEquals(new Object[] {2L, "Trudy", "Pink"}, descRows.get(0));
-    Assert.assertArrayEquals(new Object[] {1L, "Bob", "Green"}, descRows.get(1));
-    Assert.assertArrayEquals(new Object[] {0L, "Alice", "Brown"}, descRows.get(2));
+    Assert.assertArrayEquals(new Object[] {"Trudy", 2L}, descRows.get(0));
+    Assert.assertArrayEquals(new Object[] {"Bob", 1L}, descRows.get(1));
+    Assert.assertArrayEquals(new Object[] {"Alice", 0L}, descRows.get(2));
   }
 
   @Test
