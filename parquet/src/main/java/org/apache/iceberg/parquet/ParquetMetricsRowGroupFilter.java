@@ -47,16 +47,10 @@ import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
 
 public class ParquetMetricsRowGroupFilter {
+  private static final int IN_PREDICATE_LIMIT = 200;
+
   private final Schema schema;
   private final Expression expr;
-  private transient ThreadLocal<MetricsEvalVisitor> visitors = null;
-
-  private MetricsEvalVisitor visitor() {
-    if (visitors == null) {
-      this.visitors = ThreadLocal.withInitial(MetricsEvalVisitor::new);
-    }
-    return visitors.get();
-  }
 
   public ParquetMetricsRowGroupFilter(Schema schema, Expression unbound) {
     this(schema, unbound, true);
@@ -76,7 +70,7 @@ public class ParquetMetricsRowGroupFilter {
    * @return false if the file cannot contain rows that match the expression, true otherwise.
    */
   public boolean shouldRead(MessageType fileSchema, BlockMetaData rowGroup) {
-    return visitor().eval(fileSchema, rowGroup);
+    return new MetricsEvalVisitor().eval(fileSchema, rowGroup);
   }
 
   private static final boolean ROWS_MIGHT_MATCH = true;
@@ -194,6 +188,10 @@ public class ParquetMetricsRowGroupFilter {
 
       Statistics<?> colStats = stats.get(id);
       if (colStats != null && !colStats.isEmpty()) {
+        if (hasNonNullButNoMinMax(colStats, valueCount)) {
+          return ROWS_MIGHT_MATCH;
+        }
+
         if (!colStats.hasNonNullValue()) {
           return ROWS_CANNOT_MATCH;
         }
@@ -220,6 +218,10 @@ public class ParquetMetricsRowGroupFilter {
 
       Statistics<?> colStats = stats.get(id);
       if (colStats != null && !colStats.isEmpty()) {
+        if (hasNonNullButNoMinMax(colStats, valueCount)) {
+          return ROWS_MIGHT_MATCH;
+        }
+
         if (!colStats.hasNonNullValue()) {
           return ROWS_CANNOT_MATCH;
         }
@@ -246,6 +248,10 @@ public class ParquetMetricsRowGroupFilter {
 
       Statistics<?> colStats = stats.get(id);
       if (colStats != null && !colStats.isEmpty()) {
+        if (hasNonNullButNoMinMax(colStats, valueCount)) {
+          return ROWS_MIGHT_MATCH;
+        }
+
         if (!colStats.hasNonNullValue()) {
           return ROWS_CANNOT_MATCH;
         }
@@ -272,6 +278,10 @@ public class ParquetMetricsRowGroupFilter {
 
       Statistics<?> colStats = stats.get(id);
       if (colStats != null && !colStats.isEmpty()) {
+        if (hasNonNullButNoMinMax(colStats, valueCount)) {
+          return ROWS_MIGHT_MATCH;
+        }
+
         if (!colStats.hasNonNullValue()) {
           return ROWS_CANNOT_MATCH;
         }
@@ -305,6 +315,10 @@ public class ParquetMetricsRowGroupFilter {
 
       Statistics<?> colStats = stats.get(id);
       if (colStats != null && !colStats.isEmpty()) {
+        if (hasNonNullButNoMinMax(colStats, valueCount)) {
+          return ROWS_MIGHT_MATCH;
+        }
+
         if (!colStats.hasNonNullValue()) {
           return ROWS_CANNOT_MATCH;
         }
@@ -351,11 +365,20 @@ public class ParquetMetricsRowGroupFilter {
 
       Statistics<?> colStats = stats.get(id);
       if (colStats != null && !colStats.isEmpty()) {
+        if (hasNonNullButNoMinMax(colStats, valueCount)) {
+          return ROWS_MIGHT_MATCH;
+        }
+
         if (!colStats.hasNonNullValue()) {
           return ROWS_CANNOT_MATCH;
         }
 
         Collection<T> literals = literalSet;
+
+        if (literals.size() > IN_PREDICATE_LIMIT) {
+          // skip evaluating the predicate if the number of values is too big
+          return ROWS_MIGHT_MATCH;
+        }
 
         T lower = min(colStats, id);
         literals = literals.stream().filter(v -> ref.comparator().compare(lower, v) <= 0).collect(Collectors.toList());
@@ -393,6 +416,10 @@ public class ParquetMetricsRowGroupFilter {
 
       Statistics<Binary> colStats = (Statistics<Binary>) stats.get(id);
       if (colStats != null && !colStats.isEmpty()) {
+        if (hasNonNullButNoMinMax(colStats, valueCount)) {
+          return ROWS_MIGHT_MATCH;
+        }
+
         if (!colStats.hasNonNullValue()) {
           return ROWS_CANNOT_MATCH;
         }
@@ -430,5 +457,25 @@ public class ParquetMetricsRowGroupFilter {
     private <T> T max(Statistics<?> statistics, int id) {
       return (T) conversions.get(id).apply(statistics.genericGetMax());
     }
+  }
+
+  /**
+   * Checks against older versions of Parquet statistics which may have a null count but undefined min and max
+   * statistics. Returns true if nonNull values exist in the row group but no further statistics are available.
+   * <p>
+   * We can't use {@code  statistics.hasNonNullValue()} because it is inaccurate with older files and will return
+   * false if min and max are not set.
+   * <p>
+   * This is specifically for 1.5.0-CDH Parquet builds and later which contain the different unusual hasNonNull
+   * behavior. OSS Parquet builds are not effected because PARQUET-251 prohibits the reading of these statistics
+   * from versions of Parquet earlier than 1.8.0.
+   *
+   * @param statistics Statistics to check
+   * @param valueCount Number of values in the row group
+   * @return true if nonNull values exist and no other stats can be used
+   */
+  static boolean hasNonNullButNoMinMax(Statistics statistics, long valueCount) {
+    return statistics.getNumNulls() < valueCount &&
+        (statistics.getMaxBytes() == null || statistics.getMinBytes() == null);
   }
 }

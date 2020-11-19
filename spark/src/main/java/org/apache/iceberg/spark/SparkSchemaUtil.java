@@ -37,6 +37,7 @@ import org.apache.spark.sql.AnalysisException;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalog.Column;
 import org.apache.spark.sql.types.DataType;
+import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 
 /**
@@ -162,7 +163,7 @@ public class SparkSchemaUtil {
     // reassign ids to match the base schema
     Schema schema = TypeUtil.reassignIds(new Schema(struct.fields()), baseSchema);
     // fix types that can't be represented in Spark (UUID and Fixed)
-    return FixupTypes.fixup(schema, baseSchema);
+    return SparkFixupTypes.fixup(schema, baseSchema);
   }
 
   /**
@@ -255,4 +256,24 @@ public class SparkSchemaUtil {
     return builder.build();
   }
 
+  /**
+   * estimate approximate table size based on spark schema and total records.
+   *
+   * @param tableSchema  spark schema
+   * @param totalRecords total records in the table
+   * @return approxiate size based on table schema
+   */
+  public static long estimateSize(StructType tableSchema, long totalRecords) {
+    if (totalRecords == Long.MAX_VALUE) {
+      return totalRecords;
+    }
+
+    long approximateSize = 0;
+    for (StructField sparkField : tableSchema.fields()) {
+      approximateSize += sparkField.dataType().defaultSize();
+    }
+
+    long result = approximateSize * totalRecords;
+    return result > 0 ? result : Long.MAX_VALUE;
+  }
 }

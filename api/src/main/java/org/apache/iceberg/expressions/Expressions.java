@@ -120,7 +120,7 @@ public class Expressions {
   }
 
   public static <T> UnboundPredicate<T> notNull(UnboundTerm<T> expr) {
-    return new UnboundPredicate<>(Expression.Operation.IS_NULL, expr);
+    return new UnboundPredicate<>(Expression.Operation.NOT_NULL, expr);
   }
 
   public static <T> UnboundPredicate<T> lessThan(String name, T value) {
@@ -251,7 +251,28 @@ public class Expressions {
     return ExpressionVisitors.visit(expr, RewriteNot.get());
   }
 
-  static <T> NamedReference<T> ref(String name) {
+  /**
+   * Constructs a reference for a given column.
+   * <p>
+   * The following are equivalent: equals("a", 5) and equals(ref("a"), 5).
+   *
+   * @param name a column name
+   * @param <T> the Java type of this reference
+   * @return a named reference
+   */
+  public static <T> NamedReference<T> ref(String name) {
     return new NamedReference<>(name);
+  }
+
+  /**
+   * Constructs a transform expression for a given column.
+   *
+   * @param name a column name
+   * @param transform a transform function
+   * @param <T> the Java type of this term
+   * @return an unbound transform expression
+   */
+  public static <T> UnboundTerm<T> transform(String name, Transform<?, T> transform) {
+    return new UnboundTransform<>(ref(name), transform);
   }
 }

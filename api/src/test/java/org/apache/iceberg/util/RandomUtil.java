@@ -21,6 +21,7 @@ package org.apache.iceberg.util;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.Arrays;
 import java.util.Random;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
@@ -28,6 +29,10 @@ import org.apache.iceberg.types.Types;
 public class RandomUtil {
 
   private RandomUtil() {
+  }
+
+  private static boolean negate(int num) {
+    return num % 2 == 1;
   }
 
   @SuppressWarnings("RandomModInteger")
@@ -48,7 +53,7 @@ public class RandomUtil {
           case 3:
             return 0;
           default:
-            return random.nextInt();
+            return negate(choice) ? -1 * random.nextInt() : random.nextInt();
         }
 
       case LONG:
@@ -60,7 +65,7 @@ public class RandomUtil {
           case 3:
             return 0L;
           default:
-            return random.nextLong();
+            return negate(choice) ? -1L * random.nextLong() : random.nextLong();
         }
 
       case FLOAT:
@@ -82,7 +87,7 @@ public class RandomUtil {
           case 8:
             return Float.NaN;
           default:
-            return random.nextFloat();
+            return negate(choice) ? -1.0F * random.nextFloat() : random.nextFloat();
         }
 
       case DOUBLE:
@@ -104,7 +109,7 @@ public class RandomUtil {
           case 8:
             return Double.NaN;
           default:
-            return random.nextDouble();
+            return negate(choice) ? -1.0D * random.nextDouble() : random.nextDouble();
         }
 
       case DATE:
@@ -139,8 +144,46 @@ public class RandomUtil {
       case DECIMAL:
         Types.DecimalType type = (Types.DecimalType) primitive;
         BigInteger unscaled = randomUnscaled(type.precision(), random);
-        return new BigDecimal(unscaled, type.scale());
+        BigDecimal bigDecimal = new BigDecimal(unscaled, type.scale());
+        return negate(choice) ? bigDecimal.negate() : bigDecimal;
 
+      default:
+        throw new IllegalArgumentException(
+            "Cannot generate random value for unknown type: " + primitive);
+    }
+  }
+
+  public static Object generateDictionaryEncodablePrimitive(Type.PrimitiveType primitive, Random random) {
+    int value = random.nextInt(3);
+    switch (primitive.typeId()) {
+      case BOOLEAN:
+        return true; // doesn't really matter for booleans since they are not dictionary encoded
+      case INTEGER:
+      case DATE:
+        return negate(value) ? -1 * value : value;
+      case FLOAT:
+        return negate(value) ? -1.0F * (float) value : (float) value;
+      case DOUBLE:
+        return negate(value) ? -1.0D * (double) value : (double) value;
+      case LONG:
+      case TIME:
+      case TIMESTAMP:
+        return (long) value;
+      case STRING:
+        return String.valueOf(value);
+      case FIXED:
+        byte[] fixed = new byte[((Types.FixedType) primitive).length()];
+        Arrays.fill(fixed, (byte) value);
+        return fixed;
+      case BINARY:
+        byte[] binary = new byte[value + 1];
+        Arrays.fill(binary, (byte) value);
+        return binary;
+      case DECIMAL:
+        Types.DecimalType type = (Types.DecimalType) primitive;
+        BigInteger unscaled = new BigInteger(String.valueOf(value + 1));
+        BigDecimal bd = new BigDecimal(unscaled, type.scale());
+        return negate(value) ? bd.negate() : bd;
       default:
         throw new IllegalArgumentException(
             "Cannot generate random value for unknown type: " + primitive);

@@ -19,7 +19,7 @@
 
 ## Create a table
 
-Tables are created using either a [`Catalog`](/javadoc/master/index.html?org/apache/iceberg/catalog/Catalog.html) or an implementation of the [`Tables`](/javadoc/master/index.html?org/apache/iceberg/Tables.html) interface.
+Tables are created using either a [`Catalog`](./javadoc/master/index.html?org/apache/iceberg/catalog/Catalog.html) or an implementation of the [`Tables`](./javadoc/master/index.html?org/apache/iceberg/Tables.html) interface.
 
 ### Using a Hive catalog
 
@@ -41,6 +41,9 @@ import org.apache.iceberg.catalog.TableIdentifier;
 
 TableIdentifier name = TableIdentifier.of("logging", "logs");
 Table table = catalog.createTable(name, schema, spec);
+
+// or to load an existing table, use the following line
+// Table table = catalog.loadTable(name);
 ```
 
 The logs [schema](#create-a-schema) and [partition spec](#create-a-partition-spec) are created below.
@@ -69,6 +72,9 @@ import org.apache.iceberg.catalog.TableIdentifier;
 
 TableIdentifier name = TableIdentifier.of("logging", "logs");
 Table table = catalog.createTable(name, schema, spec);
+
+// or to load an existing table, use the following line
+// Table table = catalog.loadTable(name);
 ```
 
 The logs [schema](#create-a-schema) and [partition spec](#create-a-partition-spec) are created below.
@@ -88,6 +94,9 @@ import org.apache.iceberg.Table;
 Configuration conf = new Configuration():
 HadoopTables tables = new HadoopTables(conf);
 Table table = tables.create(schema, spec, table_location);
+
+// or to load an existing table, use the following line
+// Table table = tables.load(table_location);
 ```
 
 !!! Warning
@@ -99,9 +108,9 @@ Spark uses both `HiveCatalog` and `HadoopTables` to load tables. Hive is used wh
 
 To read and write to tables from Spark see:
 
-* [Reading a table in Spark](../spark#reading-an-iceberg-table)
-* [Appending to a table in Spark](../spark#appending-data)
-* [Overwriting data in a table in Spark](../spark#overwriting-data)
+* [Reading a table in Spark](./spark.md#reading-an-iceberg-table)
+* [Appending to a table in Spark](./spark.md#appending-data)
+* [Overwriting data in a table in Spark](./spark.md#overwriting-data)
 
 
 ## Schemas
@@ -166,4 +175,4 @@ PartitionSpec spec = PartitionSpec.builderFor(schema)
       .build();
 ```
 
-For more information on the different partition transforms that Iceberg offers, visit [this page](../spec#partitioning).
+For more information on the different partition transforms that Iceberg offers, visit [this page](./spec.md#partitioning).

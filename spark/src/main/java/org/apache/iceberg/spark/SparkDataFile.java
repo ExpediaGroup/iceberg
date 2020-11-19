@@ -88,6 +88,16 @@ public class SparkDataFile implements DataFile {
   }
 
   @Override
+  public Long pos() {
+    return null;
+  }
+
+  @Override
+  public int specId() {
+    return -1;
+  }
+
+  @Override
   public CharSequence path() {
     return wrapped.getAs(filePathPosition);
   }

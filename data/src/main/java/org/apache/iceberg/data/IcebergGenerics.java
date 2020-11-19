@@ -22,6 +22,7 @@ package org.apache.iceberg.data;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableScan;
 import org.apache.iceberg.expressions.Expression;
+import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 
 public class IcebergGenerics {
@@ -76,7 +77,17 @@ public class IcebergGenerics {
       return this;
     }
 
-    public Iterable<Record> build() {
+    public ScanBuilder appendsBetween(long fromSnapshotId, long toSnapshotId) {
+      this.tableScan = tableScan.appendsBetween(fromSnapshotId, toSnapshotId);
+      return this;
+    }
+
+    public ScanBuilder appendsAfter(long fromSnapshotId) {
+      this.tableScan = tableScan.appendsAfter(fromSnapshotId);
+      return this;
+    }
+
+    public CloseableIterable<Record> build() {
       return new TableScanIterable(
           tableScan,
           reuseContainers

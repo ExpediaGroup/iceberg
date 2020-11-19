@@ -48,16 +48,10 @@ import static org.apache.iceberg.expressions.Expressions.rewriteNot;
  * return value of {@code eval} is false.
  */
 public class ManifestEvaluator {
+  private static final int IN_PREDICATE_LIMIT = 200;
+
   private final StructType struct;
   private final Expression expr;
-  private transient ThreadLocal<ManifestEvalVisitor> visitors = null;
-
-  private ManifestEvalVisitor visitor() {
-    if (visitors == null) {
-      this.visitors = ThreadLocal.withInitial(ManifestEvalVisitor::new);
-    }
-    return visitors.get();
-  }
 
   public static ManifestEvaluator forRowFilter(Expression rowFilter, PartitionSpec spec, boolean caseSensitive) {
     return new ManifestEvaluator(spec, Projections.inclusive(spec, caseSensitive).project(rowFilter), caseSensitive);
@@ -80,7 +74,7 @@ public class ManifestEvaluator {
    * @return false if the file cannot contain rows that match the expression, true otherwise.
    */
   public boolean eval(ManifestFile manifest) {
-    return visitor().eval(manifest);
+    return new ManifestEvalVisitor().eval(manifest);
   }
 
   private static final boolean ROWS_MIGHT_MATCH = true;
@@ -259,6 +253,11 @@ public class ManifestEvaluator {
       }
 
       Collection<T> literals = literalSet;
+
+      if (literals.size() > IN_PREDICATE_LIMIT) {
+        // skip evaluating the predicate if the number of values is too big
+        return ROWS_MIGHT_MATCH;
+      }
 
       T lower = Conversions.fromByteBuffer(ref.type(), fieldStats.lowerBound());
       literals = literals.stream().filter(v -> ref.comparator().compare(lower, v) <= 0).collect(Collectors.toList());

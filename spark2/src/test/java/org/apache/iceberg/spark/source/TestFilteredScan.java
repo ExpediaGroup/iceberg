@@ -33,17 +33,12 @@ import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
-import org.apache.iceberg.avro.Avro;
+import org.apache.iceberg.data.GenericAppenderFactory;
 import org.apache.iceberg.data.GenericRecord;
 import org.apache.iceberg.data.Record;
-import org.apache.iceberg.data.avro.DataWriter;
-import org.apache.iceberg.data.orc.GenericOrcWriter;
-import org.apache.iceberg.data.parquet.GenericParquetWriter;
 import org.apache.iceberg.expressions.Literal;
 import org.apache.iceberg.hadoop.HadoopTables;
 import org.apache.iceberg.io.FileAppender;
-import org.apache.iceberg.orc.ORC;
-import org.apache.iceberg.parquet.Parquet;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.spark.data.GenericsHelpers;
@@ -152,18 +147,22 @@ public class TestFilteredScan {
   public TemporaryFolder temp = new TemporaryFolder();
 
   private final String format;
+  private final boolean vectorized;
 
-  @Parameterized.Parameters
+  @Parameterized.Parameters(name = "format = {0}, vectorized = {1}")
   public static Object[][] parameters() {
     return new Object[][] {
-        new Object[] { "parquet" },
-        new Object[] { "avro" },
-        new Object[] { "orc" }
+        { "parquet", false },
+        { "parquet", true },
+        { "avro", false },
+        { "orc", false },
+        { "orc", true }
     };
   }
 
-  public TestFilteredScan(String format) {
+  public TestFilteredScan(String format, boolean vectorized) {
     this.format = format;
+    this.vectorized = vectorized;
   }
 
   private File parent = null;
@@ -187,33 +186,9 @@ public class TestFilteredScan {
     // create records using the table's schema
     this.records = testRecords(tableSchema);
 
-    switch (fileFormat) {
-      case AVRO:
-        try (FileAppender<Record> writer = Avro.write(localOutput(testFile))
-            .createWriterFunc(DataWriter::create)
-            .schema(tableSchema)
-            .build()) {
-          writer.addAll(records);
-        }
-        break;
-
-      case PARQUET:
-        try (FileAppender<Record> writer = Parquet.write(localOutput(testFile))
-            .createWriterFunc(GenericParquetWriter::buildWriter)
-            .schema(tableSchema)
-            .build()) {
-          writer.addAll(records);
-        }
-        break;
-
-      case ORC:
-        try (FileAppender<Record> writer = ORC.write(localOutput(testFile))
-            .createWriterFunc(GenericOrcWriter::buildWriter)
-            .schema(tableSchema)
-            .build()) {
-          writer.addAll(records);
-        }
-        break;
+    try (FileAppender<Record> writer = new GenericAppenderFactory(tableSchema).newAppender(
+        localOutput(testFile), fileFormat)) {
+      writer.addAll(records);
     }
 
     DataFile file = DataFiles.builder(PartitionSpec.unpartitioned())
@@ -243,7 +218,7 @@ public class TestFilteredScan {
 
       // validate row filtering
       assertEqualsSafe(SCHEMA.asStruct(), expected(i),
-          read(unpartitioned.toString(), "id = " + i));
+          read(unpartitioned.toString(), vectorized, "id = " + i));
     }
   }
 
@@ -270,7 +245,7 @@ public class TestFilteredScan {
 
         // validate row filtering
         assertEqualsSafe(SCHEMA.asStruct(), expected(i),
-            read(unpartitioned.toString(), "id = " + i));
+            read(unpartitioned.toString(), vectorized, "id = " + i));
       }
     } finally {
       // return global conf to previous state
@@ -294,7 +269,7 @@ public class TestFilteredScan {
     Assert.assertEquals("Should only create one task for a small file", 1, tasks.size());
 
     assertEqualsSafe(SCHEMA.asStruct(), expected(5, 6, 7, 8, 9),
-        read(unpartitioned.toString(), "ts < cast('2017-12-22 00:00:00+00:00' as timestamp)"));
+        read(unpartitioned.toString(), vectorized, "ts < cast('2017-12-22 00:00:00+00:00' as timestamp)"));
   }
 
   @Test
@@ -321,7 +296,7 @@ public class TestFilteredScan {
       Assert.assertEquals("Should create one task for a single bucket", 1, tasks.size());
 
       // validate row filtering
-      assertEqualsSafe(SCHEMA.asStruct(), expected(i), read(location.toString(), "id = " + i));
+      assertEqualsSafe(SCHEMA.asStruct(), expected(i), read(location.toString(), vectorized, "id = " + i));
     }
   }
 
@@ -348,7 +323,7 @@ public class TestFilteredScan {
       Assert.assertEquals("Should create one task for 2017-12-21", 1, tasks.size());
 
       assertEqualsSafe(SCHEMA.asStruct(), expected(5, 6, 7, 8, 9),
-          read(location.toString(), "ts < cast('2017-12-22 00:00:00+00:00' as timestamp)"));
+          read(location.toString(), vectorized, "ts < cast('2017-12-22 00:00:00+00:00' as timestamp)"));
     }
 
     {
@@ -361,7 +336,7 @@ public class TestFilteredScan {
       List<InputPartition<InternalRow>> tasks = reader.planInputPartitions();
       Assert.assertEquals("Should create one task for 2017-12-22", 1, tasks.size());
 
-      assertEqualsSafe(SCHEMA.asStruct(), expected(1, 2), read(location.toString(),
+      assertEqualsSafe(SCHEMA.asStruct(), expected(1, 2), read(location.toString(), vectorized,
           "ts > cast('2017-12-22 06:00:00+00:00' as timestamp) and " +
               "ts < cast('2017-12-22 08:00:00+00:00' as timestamp)"));
     }
@@ -390,7 +365,7 @@ public class TestFilteredScan {
       Assert.assertEquals("Should create 4 tasks for 2017-12-21: 15, 17, 21, 22", 4, tasks.size());
 
       assertEqualsSafe(SCHEMA.asStruct(), expected(8, 9, 7, 6, 5),
-          read(location.toString(), "ts < cast('2017-12-22 00:00:00+00:00' as timestamp)"));
+          read(location.toString(), vectorized, "ts < cast('2017-12-22 00:00:00+00:00' as timestamp)"));
     }
 
     {
@@ -403,7 +378,7 @@ public class TestFilteredScan {
       List<InputPartition<InternalRow>> tasks = reader.planInputPartitions();
       Assert.assertEquals("Should create 2 tasks for 2017-12-22: 6, 7", 2, tasks.size());
 
-      assertEqualsSafe(SCHEMA.asStruct(), expected(2, 1), read(location.toString(),
+      assertEqualsSafe(SCHEMA.asStruct(), expected(2, 1), read(location.toString(), vectorized,
           "ts > cast('2017-12-22 06:00:00+00:00' as timestamp) and " +
               "ts < cast('2017-12-22 08:00:00+00:00' as timestamp)"));
     }
@@ -420,7 +395,7 @@ public class TestFilteredScan {
       }
 
       assertEqualsSafe(actualProjection.asStruct(), expected, read(
-          unpartitioned.toString(),
+          unpartitioned.toString(), vectorized,
           "ts < cast('2017-12-22 00:00:00+00:00' as timestamp)",
           "id", "data"));
     }
@@ -435,7 +410,7 @@ public class TestFilteredScan {
       }
 
       assertEqualsSafe(actualProjection.asStruct(), expected, read(
-          unpartitioned.toString(),
+          unpartitioned.toString(), vectorized,
           "ts > cast('2017-12-22 06:00:00+00:00' as timestamp) and " +
               "ts < cast('2017-12-22 08:00:00+00:00' as timestamp)",
           "id"));
@@ -512,6 +487,7 @@ public class TestFilteredScan {
   public void testUnpartitionedStartsWith() {
     Dataset<Row> df = spark.read()
         .format("iceberg")
+        .option("vectorization-enabled", String.valueOf(vectorized))
         .load(unpartitioned.toString());
 
     List<String> matchedData = df.select("data")
@@ -578,6 +554,7 @@ public class TestFilteredScan {
     // copy the unpartitioned table into the partitioned table to produce the partitioned data
     Dataset<Row> allRows = spark.read()
         .format("iceberg")
+        .option("vectorization-enabled", String.valueOf(vectorized))
         .load(unpartitioned.toString());
 
     allRows
@@ -608,12 +585,14 @@ public class TestFilteredScan {
     );
   }
 
-  private static List<Row> read(String table, String expr) {
-    return read(table, expr, "*");
+  private static List<Row> read(String table, boolean vectorized, String expr) {
+    return read(table, vectorized, expr, "*");
   }
 
-  private static List<Row> read(String table, String expr, String select0, String... selectN) {
-    Dataset<Row> dataset = spark.read().format("iceberg").load(table).filter(expr)
+  private static List<Row> read(String table, boolean vectorized, String expr, String select0, String... selectN) {
+    Dataset<Row> dataset = spark.read().format("iceberg")
+        .option("vectorization-enabled", String.valueOf(vectorized))
+        .load(table).filter(expr)
         .select(select0, selectN);
     return dataset.collectAsList();
   }

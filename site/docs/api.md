@@ -25,11 +25,11 @@ Table metadata and operations are accessed through the `Table` interface. This i
 
 ### Table metadata
 
-The [`Table` interface](/javadoc/master/index.html?org/apache/iceberg/Table.html) provides access table metadata:
+The [`Table` interface](./javadoc/master/index.html?org/apache/iceberg/Table.html) provides access table metadata:
 
-* `schema` returns the current table [schema](../schemas)
+* `schema` returns the current table [schema](./schemas.md)
 * `spec` returns the current table partition spec
-* `properties` returns a map of key-value [properties](../configuration)
+* `properties` returns a map of key-value [properties](./configuration.md)
 * `currentSnapshot` returns the current table snapshot
 * `snapshots` returns all valid snapshots for the table
 * `snapshot(id)` returns a specific snapshot by ID
@@ -73,7 +73,7 @@ Use `asOfTime` or `useSnapshot` to configure the table snapshot for time travel 
 
 ### Update operations
 
-`Table` also exposes operations that update the table. These operations use a builder pattern, [`PendingUpdate`](/javadoc/master/index.html?org/apache/iceberg/PendingUpdate.html), that commits when `PendingUpdate#commit` is called.
+`Table` also exposes operations that update the table. These operations use a builder pattern, [`PendingUpdate`](./javadoc/master/index.html?org/apache/iceberg/PendingUpdate.html), that commits when `PendingUpdate#commit` is called.
 
 For example, updating the table schema is done by calling `updateSchema`, adding updates to the builder, and finally calling `commit` to commit the pending changes to the table:
 
@@ -99,9 +99,23 @@ Available operations to update a table are:
 
 ### Transactions
 
+Transactions are used to commit multiple table changes in a single atomic operation. A transaction is used to create individual operations using factory methods, like `newAppend`, just like working with a `Table`. Operations created by a transaction are committed as a group when `commitTransaction` is called.
+
+For example, deleting and appending a file in the same transaction:
+```java
+Transaction t = table.newTrasaction();
+
+// commit operations to the transaction
+t.newDelete().deleteFromRowFilter(filter).commit();
+t.newAppend().appendFile(data).commit();
+
+// commit all the changes to the table
+t.commitTransaction();
+```
+
 ## Types
 
-Iceberg data types are located in the [`org.apache.iceberg.types` package](/javadoc/master/index.html?org/apache/iceberg/types/package-summary.html).
+Iceberg data types are located in the [`org.apache.iceberg.types` package](./javadoc/master/index.html?org/apache/iceberg/types/package-summary.html).
 
 ### Primitives
 
@@ -117,7 +131,7 @@ Types.DecimalType.of(9, 2) // decimal(9, 2)
 
 Structs, maps, and lists are created using factory methods in type classes.
 
-Like struct fields, map keys or values and list elements are tracked as nested fields. Nested fields track [field IDs](../evolution#correctness) and nullability.
+Like struct fields, map keys or values and list elements are tracked as nested fields. Nested fields track [field IDs](./evolution.md#correctness) and nullability.
 
 Struct fields are created using `NestedField.optional` or `NestedField.required`. Map value and list element nullability is set in the map and list factory methods.
 
@@ -143,7 +157,7 @@ ListType list = ListType.ofRequired(1, IntegerType.get());
 
 ## Expressions
 
-Iceberg's expressions are used to configure table scans. To create expressions, use the factory methods in [`Expressions`](/javadoc/master/index.html?org/apache/iceberg/expressions/Expressions.html).
+Iceberg's expressions are used to configure table scans. To create expressions, use the factory methods in [`Expressions`](./javadoc/master/index.html?org/apache/iceberg/expressions/Expressions.html).
 
 Supported predicate expressions are:
 
@@ -196,11 +210,12 @@ Iceberg table support is organized in library modules:
 * `iceberg-core` contains implementations of the Iceberg API and support for Avro data files, **this is what processing engines should depend on**
 * `iceberg-parquet` is an optional module for working with tables backed by Parquet files
 * `iceberg-orc` is an optional module for working with tables backed by ORC files (*experimental*)
-* `iceberg-hive` is an implementation of iceberg tables backed by hive metastore thrift client
+* `iceberg-hive-metastore` is an implementation of Iceberg tables backed by the Hive metastore Thrift client
 
 This project Iceberg also has modules for adding Iceberg support to processing engines:
 
-* `iceberg-spark` is an implementation of Spark's Datasource V2 API for Iceberg (use iceberg-runtime for a shaded version)
+* `iceberg-spark2` is an implementation of Spark's Datasource V2 API in 2.4 for Iceberg (use iceberg-spark-runtime for a shaded version)
+* `iceberg-spark3` is an implementation of Spark's Datasource V2 API in 3.0 for Iceberg (use iceberg-spark3-runtime for a shaded version)
 * `iceberg-data` is a client library used to read Iceberg tables from JVM applications
 * `iceberg-pig` is an implementation of Pig's LoadFunc API for Iceberg
 * `iceberg-runtime` generates a shaded runtime jar for Spark to integrate with iceberg tables

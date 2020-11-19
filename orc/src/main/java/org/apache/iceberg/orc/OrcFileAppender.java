@@ -24,10 +24,11 @@ import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
+import java.util.function.BiFunction;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.Metrics;
+import org.apache.iceberg.MetricsConfig;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.exceptions.RuntimeIOException;
 import org.apache.iceberg.hadoop.HadoopOutputFile;
@@ -47,24 +48,24 @@ import org.apache.orc.storage.ql.exec.vector.VectorizedRowBatch;
  */
 class OrcFileAppender<D> implements FileAppender<D> {
   private final int batchSize;
-  private final Schema schema;
   private final OutputFile file;
   private final Writer writer;
   private final VectorizedRowBatch batch;
-  private final OrcValueWriter<D> valueWriter;
+  private final OrcRowWriter<D> valueWriter;
   private boolean isClosed = false;
   private final Configuration conf;
+  private final MetricsConfig metricsConfig;
 
   OrcFileAppender(Schema schema, OutputFile file,
-                  Function<TypeDescription, OrcValueWriter<?>> createWriterFunc,
+                  BiFunction<Schema, TypeDescription, OrcRowWriter<?>> createWriterFunc,
                   Configuration conf, Map<String, byte[]> metadata,
-                  int batchSize) {
+                  int batchSize, MetricsConfig metricsConfig) {
     this.conf = conf;
     this.file = file;
     this.batchSize = batchSize;
-    this.schema = schema;
+    this.metricsConfig = metricsConfig;
 
-    TypeDescription orcSchema = ORCSchemaUtil.convert(this.schema);
+    TypeDescription orcSchema = ORCSchemaUtil.convert(schema);
     this.batch = orcSchema.createRowBatch(this.batchSize);
 
     OrcFile.WriterOptions options = OrcFile.writerOptions(conf).useUTCTimestamp(true);
@@ -73,7 +74,7 @@ class OrcFileAppender<D> implements FileAppender<D> {
     }
     options.setSchema(orcSchema);
     this.writer = newOrcWriter(file, options, metadata);
-    this.valueWriter = newOrcValueWriter(orcSchema, createWriterFunc);
+    this.valueWriter = newOrcRowWriter(schema, orcSchema, createWriterFunc);
   }
 
   @Override
@@ -85,7 +86,7 @@ class OrcFileAppender<D> implements FileAppender<D> {
         batch.reset();
       }
     } catch (IOException ioe) {
-      throw new RuntimeIOException(ioe, "Problem writing to ORC file " + file.location());
+      throw new RuntimeIOException(ioe, "Problem writing to ORC file %s", file.location());
     }
   }
 
@@ -93,14 +94,14 @@ class OrcFileAppender<D> implements FileAppender<D> {
   public Metrics metrics() {
     Preconditions.checkState(isClosed,
         "Cannot return metrics while appending to an open file.");
-    return OrcMetrics.fromWriter(writer);
+    return OrcMetrics.fromWriter(writer, metricsConfig);
   }
 
   @Override
   public long length() {
     Preconditions.checkState(isClosed,
         "Cannot return length while appending to an open file.");
-    return writer.getRawDataSize();
+    return file.toInputFile().getLength();
   }
 
   @Override
@@ -137,7 +138,7 @@ class OrcFileAppender<D> implements FileAppender<D> {
     try {
       writer = OrcFile.createWriter(locPath, options);
     } catch (IOException ioe) {
-      throw new RuntimeIOException(ioe, "Can't create file " + locPath);
+      throw new RuntimeIOException(ioe, "Can't create file %s", locPath);
     }
 
     metadata.forEach((key, value) -> writer.addUserMetadata(key, ByteBuffer.wrap(value)));
@@ -146,8 +147,10 @@ class OrcFileAppender<D> implements FileAppender<D> {
   }
 
   @SuppressWarnings("unchecked")
-  private static <D> OrcValueWriter<D> newOrcValueWriter(
-      TypeDescription schema, Function<TypeDescription, OrcValueWriter<?>> createWriterFunc) {
-    return (OrcValueWriter<D>) createWriterFunc.apply(schema);
+  private static <D> OrcRowWriter<D> newOrcRowWriter(Schema schema,
+                                                     TypeDescription orcSchema,
+                                                     BiFunction<Schema, TypeDescription, OrcRowWriter<?>>
+                                                         createWriterFunc) {
+    return (OrcRowWriter<D>) createWriterFunc.apply(schema, orcSchema);
   }
 }

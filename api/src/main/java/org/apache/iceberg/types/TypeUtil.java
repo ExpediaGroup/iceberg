@@ -37,39 +37,63 @@ import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 
 public class TypeUtil {
 
-  private TypeUtil() {}
+  private TypeUtil() {
+  }
 
   public static Schema select(Schema schema, Set<Integer> fieldIds) {
     Preconditions.checkNotNull(schema, "Schema cannot be null");
-    Preconditions.checkNotNull(fieldIds, "Field ids cannot be null");
 
-    Type result = visit(schema, new PruneColumns(fieldIds));
+    Types.StructType result = select(schema.asStruct(), fieldIds);
     if (schema.asStruct() == result) {
       return schema;
     } else if (result != null) {
       if (schema.getAliases() != null) {
-        return new Schema(result.asNestedType().fields(), schema.getAliases());
+        return new Schema(result.fields(), schema.getAliases());
       } else {
-        return new Schema(result.asNestedType().fields());
+        return new Schema(result.fields());
       }
     }
 
     return new Schema(ImmutableList.of(), schema.getAliases());
   }
 
-  public static Set<Integer> getProjectedIds(Schema schema) {
-    return visit(schema, new GetProjectedIds());
+  public static Types.StructType select(Types.StructType struct, Set<Integer> fieldIds) {
+    Preconditions.checkNotNull(struct, "Struct cannot be null");
+    Preconditions.checkNotNull(fieldIds, "Field ids cannot be null");
+
+    Type result = visit(struct, new PruneColumns(fieldIds));
+    if (struct == result) {
+      return struct;
+    } else if (result != null) {
+      return result.asStructType();
+    }
+
+    return Types.StructType.of();
   }
 
-  public static Set<Integer> getProjectedIds(Type schema) {
-    if (schema.isPrimitiveType()) {
+  public static Set<Integer> getProjectedIds(Schema schema) {
+    return ImmutableSet.copyOf(getIdsInternal(schema.asStruct()));
+  }
+
+  public static Set<Integer> getProjectedIds(Type type) {
+    if (type.isPrimitiveType()) {
       return ImmutableSet.of();
     }
-    return ImmutableSet.copyOf(visit(schema, new GetProjectedIds()));
+    return ImmutableSet.copyOf(getIdsInternal(type));
+  }
+
+  private static Set<Integer> getIdsInternal(Type type) {
+    return visit(type, new GetProjectedIds());
+  }
+
+  public static Types.StructType selectNot(Types.StructType struct, Set<Integer> fieldIds) {
+    Set<Integer> projectedIds = getIdsInternal(struct);
+    projectedIds.removeAll(fieldIds);
+    return select(struct, projectedIds);
   }
 
   public static Schema selectNot(Schema schema, Set<Integer> fieldIds) {
-    Set<Integer> projectedIds = getProjectedIds(schema);
+    Set<Integer> projectedIds = getIdsInternal(schema.asStruct());
     projectedIds.removeAll(fieldIds);
     return select(schema, projectedIds);
   }
@@ -82,7 +106,15 @@ public class TypeUtil {
   }
 
   public static Map<String, Integer> indexByName(Types.StructType struct) {
-    return visit(struct, new IndexByName());
+    IndexByName indexer = new IndexByName();
+    visit(struct, indexer);
+    return indexer.byName();
+  }
+
+  public static Map<Integer, String> indexNameById(Types.StructType struct) {
+    IndexByName indexer = new IndexByName();
+    visit(struct, indexer);
+    return indexer.byId();
   }
 
   public static Map<String, Integer> indexByLowerCaseName(Types.StructType struct) {
@@ -121,6 +153,21 @@ public class TypeUtil {
   public static Schema assignFreshIds(Schema schema, NextID nextId) {
     return new Schema(TypeUtil
         .visit(schema.asStruct(), new AssignFreshIds(nextId))
+        .asNestedType()
+        .fields());
+  }
+
+  /**
+   * Assigns ids to match a given schema, and fresh ids from the {@link NextID nextId function} for all other fields.
+   *
+   * @param schema a schema
+   * @param baseSchema a schema with existing IDs to copy by name
+   * @param nextId an id assignment function
+   * @return a structurally identical schema with new ids assigned by the nextId function
+   */
+  public static Schema assignFreshIds(Schema schema, Schema baseSchema, NextID nextId) {
+    return new Schema(TypeUtil
+        .visit(schema.asStruct(), new AssignFreshIds(schema, baseSchema, nextId))
         .asNestedType()
         .fields());
   }

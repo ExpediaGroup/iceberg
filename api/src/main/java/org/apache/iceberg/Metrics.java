@@ -19,9 +19,14 @@
 
 package org.apache.iceberg;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
+import java.util.HashMap;
 import java.util.Map;
+import org.apache.iceberg.util.ByteBuffers;
 
 /**
  * Iceberg file format metrics.
@@ -32,12 +37,17 @@ public class Metrics implements Serializable {
   private Map<Integer, Long> columnSizes = null;
   private Map<Integer, Long> valueCounts = null;
   private Map<Integer, Long> nullValueCounts = null;
+  private Map<Integer, Long> nanValueCounts = null;
   private Map<Integer, ByteBuffer> lowerBounds = null;
   private Map<Integer, ByteBuffer> upperBounds = null;
 
   public Metrics() {
   }
 
+  /**
+   * @deprecated will be removed in 0.12.0; use {@link #Metrics(Long, Map, Map, Map, Map)} instead.
+   */
+  @Deprecated
   public Metrics(Long rowCount,
                  Map<Integer, Long> columnSizes,
                  Map<Integer, Long> valueCounts,
@@ -52,12 +62,44 @@ public class Metrics implements Serializable {
                  Map<Integer, Long> columnSizes,
                  Map<Integer, Long> valueCounts,
                  Map<Integer, Long> nullValueCounts,
+                 Map<Integer, Long> nanValueCounts) {
+    this.rowCount = rowCount;
+    this.columnSizes = columnSizes;
+    this.valueCounts = valueCounts;
+    this.nullValueCounts = nullValueCounts;
+    this.nanValueCounts = nanValueCounts;
+  }
+
+  /**
+   * @deprecated will be removed in 0.12.0; use {@link #Metrics(Long, Map, Map, Map, Map, Map, Map)} instead.
+   */
+  @Deprecated
+  public Metrics(Long rowCount,
+                 Map<Integer, Long> columnSizes,
+                 Map<Integer, Long> valueCounts,
+                 Map<Integer, Long> nullValueCounts,
                  Map<Integer, ByteBuffer> lowerBounds,
                  Map<Integer, ByteBuffer> upperBounds) {
     this.rowCount = rowCount;
     this.columnSizes = columnSizes;
     this.valueCounts = valueCounts;
     this.nullValueCounts = nullValueCounts;
+    this.lowerBounds = lowerBounds;
+    this.upperBounds = upperBounds;
+  }
+
+  public Metrics(Long rowCount,
+                 Map<Integer, Long> columnSizes,
+                 Map<Integer, Long> valueCounts,
+                 Map<Integer, Long> nullValueCounts,
+                 Map<Integer, Long> nanValueCounts,
+                 Map<Integer, ByteBuffer> lowerBounds,
+                 Map<Integer, ByteBuffer> upperBounds) {
+    this.rowCount = rowCount;
+    this.columnSizes = columnSizes;
+    this.valueCounts = valueCounts;
+    this.nullValueCounts = nullValueCounts;
+    this.nanValueCounts = nanValueCounts;
     this.lowerBounds = lowerBounds;
     this.upperBounds = upperBounds;
   }
@@ -99,6 +141,15 @@ public class Metrics implements Serializable {
   }
 
   /**
+   * Get the number of NaN values for all float and double fields in a file.
+   *
+   * @return a Map of fieldId to the number of NaN counts
+   */
+  public Map<Integer, Long> nanValueCounts() {
+    return nanValueCounts;
+  }
+
+  /**
    * Get the non-null lower bound values for all fields in a file.
    *
    * To convert the {@link ByteBuffer} back to a value, use
@@ -119,5 +170,80 @@ public class Metrics implements Serializable {
    */
   public Map<Integer, ByteBuffer> upperBounds() {
     return upperBounds;
+  }
+
+  /**
+   * Implemented the method to enable serialization of ByteBuffers.
+   * @param out The stream where to write
+   * @throws IOException On serialization error
+   */
+  private void writeObject(ObjectOutputStream out) throws IOException {
+    out.writeObject(rowCount);
+    out.writeObject(columnSizes);
+    out.writeObject(valueCounts);
+    out.writeObject(nullValueCounts);
+    out.writeObject(nanValueCounts);
+
+    writeByteBufferMap(out, lowerBounds);
+    writeByteBufferMap(out, upperBounds);
+  }
+
+  private static void writeByteBufferMap(ObjectOutputStream out, Map<Integer, ByteBuffer> byteBufferMap)
+      throws IOException {
+    if (byteBufferMap == null) {
+      out.writeInt(-1);
+
+    } else {
+      // Write the size
+      out.writeInt(byteBufferMap.size());
+
+      for (Map.Entry<Integer, ByteBuffer> entry : byteBufferMap.entrySet()) {
+        // Write the key and the value converted to byte[]
+        out.writeObject(entry.getKey());
+        out.writeObject(ByteBuffers.toByteArray(entry.getValue()));
+      }
+    }
+  }
+
+  /**
+   * Implemented the method to enable deserialization of ByteBuffers.
+   * @param in The stream to read from
+   * @throws IOException On serialization error
+   * @throws ClassNotFoundException If the class is not found
+   */
+  private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+    rowCount = (Long) in.readObject();
+    columnSizes = (Map<Integer, Long>) in.readObject();
+    valueCounts = (Map<Integer, Long>) in.readObject();
+    nullValueCounts = (Map<Integer, Long>) in.readObject();
+    nanValueCounts = (Map<Integer, Long>) in.readObject();
+
+    lowerBounds = readByteBufferMap(in);
+    upperBounds = readByteBufferMap(in);
+  }
+
+  private static Map<Integer, ByteBuffer> readByteBufferMap(ObjectInputStream in)
+      throws IOException, ClassNotFoundException {
+    int size = in.readInt();
+
+    if (size == -1) {
+      return null;
+
+    } else {
+      Map<Integer, ByteBuffer> result = new HashMap<>(size);
+
+      for (int i = 0; i < size; ++i) {
+        Integer key = (Integer) in.readObject();
+        byte[] data = (byte[]) in.readObject();
+
+        if (data != null) {
+          result.put(key, ByteBuffer.wrap(data));
+        } else {
+          result.put(key, null);
+        }
+      }
+
+      return result;
+    }
   }
 }

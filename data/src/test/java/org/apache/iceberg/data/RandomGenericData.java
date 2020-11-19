@@ -25,8 +25,10 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -43,23 +45,46 @@ import org.apache.iceberg.util.RandomUtil;
 import static java.time.temporal.ChronoUnit.MICROS;
 
 public class RandomGenericData {
-  private RandomGenericData() {}
-
-  public static List<Record> generate(Schema schema, int numRecords, long seed) {
-    RandomDataGenerator generator = new RandomDataGenerator(seed);
-    List<Record> records = Lists.newArrayListWithExpectedSize(numRecords);
-    for (int i = 0; i < numRecords; i += 1) {
-      records.add((Record) TypeUtil.visit(schema, generator));
-    }
-
-    return records;
+  private RandomGenericData() {
   }
 
-  private static class RandomDataGenerator extends TypeUtil.CustomOrderSchemaVisitor<Object> {
-    private final Random random;
+  public static List<Record> generate(Schema schema, int numRecords, long seed) {
+    return Lists.newArrayList(generateIcebergGenerics(schema, numRecords, () -> new RandomRecordGenerator(seed)));
+  }
 
-    private RandomDataGenerator(long seed) {
-      this.random = new Random(seed);
+  public static Iterable<Record> generateFallbackRecords(Schema schema, int numRecords, long seed, long numDictRows) {
+    return generateIcebergGenerics(schema, numRecords, () -> new FallbackGenerator(seed, numDictRows));
+  }
+
+  public static Iterable<Record> generateDictionaryEncodableRecords(Schema schema, int numRecords, long seed) {
+    return generateIcebergGenerics(schema, numRecords, () -> new DictionaryEncodedGenerator(seed));
+  }
+
+  private static Iterable<Record> generateIcebergGenerics(Schema schema, int numRecords,
+                                                          Supplier<RandomDataGenerator<Record>> supplier) {
+    return () -> new Iterator<Record>() {
+      private final RandomDataGenerator<Record> generator = supplier.get();
+      private int count = 0;
+
+      @Override
+      public boolean hasNext() {
+        return count < numRecords;
+      }
+
+      @Override
+      public Record next() {
+        if (!hasNext()) {
+          throw new NoSuchElementException();
+        }
+        ++count;
+        return (Record) TypeUtil.visit(schema, generator);
+      }
+    };
+  }
+
+  private static class RandomRecordGenerator extends RandomDataGenerator<Record> {
+    private RandomRecordGenerator(long seed) {
+      super(seed);
     }
 
     @Override
@@ -78,6 +103,65 @@ public class RandomGenericData {
 
       return rec;
     }
+  }
+
+  private static class DictionaryEncodedGenerator extends RandomRecordGenerator  {
+    DictionaryEncodedGenerator(long seed) {
+      super(seed);
+    }
+
+    @Override
+    protected int getMaxEntries() {
+      // Here we limited the max entries in LIST or MAP to be 3, because we have the mechanism to duplicate
+      // the keys in RandomDataGenerator#map while the dictionary encoder will generate a string with
+      // limited values("0","1","2"). It's impossible for us to request the generator to generate more than 3 keys,
+      // otherwise we will get in a infinite loop in RandomDataGenerator#map.
+      return 3;
+    }
+
+    @Override
+    protected Object randomValue(Type.PrimitiveType primitive, Random random) {
+      return RandomUtil.generateDictionaryEncodablePrimitive(primitive, random);
+    }
+  }
+
+  private static class FallbackGenerator extends RandomRecordGenerator {
+    private final long dictionaryEncodedRows;
+    private long rowCount = 0;
+
+    FallbackGenerator(long seed, long numDictionaryEncoded) {
+      super(seed);
+      this.dictionaryEncodedRows = numDictionaryEncoded;
+    }
+
+    @Override
+    protected Object randomValue(Type.PrimitiveType primitive, Random rand) {
+      this.rowCount += 1;
+      if (rowCount > dictionaryEncodedRows) {
+        return RandomUtil.generatePrimitive(primitive, rand);
+      } else {
+        return RandomUtil.generateDictionaryEncodablePrimitive(primitive, rand);
+      }
+    }
+  }
+
+  public abstract static class RandomDataGenerator<T> extends TypeUtil.CustomOrderSchemaVisitor<Object> {
+    private final Random random;
+    private static final int MAX_ENTRIES = 20;
+
+    protected RandomDataGenerator(long seed) {
+      this.random = new Random(seed);
+    }
+
+    protected int getMaxEntries() {
+      return MAX_ENTRIES;
+    }
+
+    @Override
+    public abstract T schema(Schema schema, Supplier<Object> structResult);
+
+    @Override
+    public abstract T struct(Types.StructType struct, Iterable<Object> fieldResults);
 
     @Override
     public Object field(Types.NestedField field, Supplier<Object> fieldResult) {
@@ -90,7 +174,7 @@ public class RandomGenericData {
 
     @Override
     public Object list(Types.ListType list, Supplier<Object> elementResult) {
-      int numElements = random.nextInt(20);
+      int numElements = random.nextInt(getMaxEntries());
 
       List<Object> result = Lists.newArrayListWithExpectedSize(numElements);
       for (int i = 0; i < numElements; i += 1) {
@@ -107,7 +191,7 @@ public class RandomGenericData {
 
     @Override
     public Object map(Types.MapType map, Supplier<Object> keyResult, Supplier<Object> valueResult) {
-      int numEntries = random.nextInt(20);
+      int numEntries = random.nextInt(getMaxEntries());
 
       Map<Object, Object> result = Maps.newLinkedHashMap();
       Supplier<Object> keyFunc;
@@ -140,7 +224,7 @@ public class RandomGenericData {
 
     @Override
     public Object primitive(Type.PrimitiveType primitive) {
-      Object result = RandomUtil.generatePrimitive(primitive, random);
+      Object result = randomValue(primitive, random);
       switch (primitive.typeId()) {
         case BINARY:
           return ByteBuffer.wrap((byte[]) result);
@@ -160,6 +244,10 @@ public class RandomGenericData {
         default:
           return result;
       }
+    }
+
+    protected Object randomValue(Type.PrimitiveType primitive, Random rand) {
+      return RandomUtil.generatePrimitive(primitive, rand);
     }
   }
 

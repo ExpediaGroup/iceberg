@@ -33,22 +33,26 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
 import org.apache.iceberg.BaseMetastoreCatalog;
-import org.apache.iceberg.PartitionSpec;
+import org.apache.iceberg.CatalogProperties;
+import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.Schema;
-import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
+import org.apache.iceberg.exceptions.NamespaceNotEmptyException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.exceptions.RuntimeIOException;
+import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.relocated.com.google.common.base.Joiner;
+import org.apache.iceberg.relocated.com.google.common.base.MoreObjects;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 
 /**
@@ -71,9 +75,43 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
   private static final Joiner SLASH = Joiner.on("/");
   private static final PathFilter TABLE_FILTER = path -> path.getName().endsWith(TABLE_METADATA_FILE_EXTENSION);
 
+  private final String catalogName;
   private final Configuration conf;
   private final String warehouseLocation;
   private final FileSystem fs;
+  private final FileIO fileIO;
+
+  /**
+   * The constructor of the HadoopCatalog. It uses the passed location as its warehouse directory.
+   *
+   * @param name The catalog name
+   * @param conf The Hadoop configuration
+   * @param warehouseLocation The location used as warehouse directory
+   */
+  public HadoopCatalog(String name, Configuration conf, String warehouseLocation) {
+    this(name, conf, warehouseLocation, Maps.newHashMap());
+  }
+
+  /**
+   * The all-arg constructor of the HadoopCatalog.
+   *
+   * @param name The catalog name
+   * @param conf The Hadoop configuration
+   * @param warehouseLocation The location used as warehouse directory
+   * @param properties catalog properties
+   */
+  public HadoopCatalog(String name, Configuration conf, String warehouseLocation, Map<String, String> properties) {
+    Preconditions.checkArgument(warehouseLocation != null && !warehouseLocation.equals(""),
+        "no location provided for warehouse");
+
+    this.catalogName = name;
+    this.conf = conf;
+    this.warehouseLocation = warehouseLocation.replaceAll("/*$", "");
+    this.fs = Util.getFs(new Path(warehouseLocation), conf);
+
+    String fileIOImpl = properties.get(CatalogProperties.FILE_IO_IMPL);
+    this.fileIO = fileIOImpl == null ? new HadoopFileIO(conf) : CatalogUtil.loadFileIO(fileIOImpl, properties, conf);
+  }
 
   /**
    * The constructor of the HadoopCatalog. It uses the passed location as its warehouse directory.
@@ -82,12 +120,7 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
    * @param warehouseLocation The location used as warehouse directory
    */
   public HadoopCatalog(Configuration conf, String warehouseLocation) {
-    Preconditions.checkArgument(warehouseLocation != null && !warehouseLocation.equals(""),
-        "no location provided for warehouse");
-
-    this.conf = conf;
-    this.warehouseLocation = warehouseLocation.replaceAll("/*$", "");
-    this.fs = Util.getFs(new Path(warehouseLocation), conf);
+    this("hadoop", conf, warehouseLocation);
   }
 
   /**
@@ -98,14 +131,12 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
    * @param conf The Hadoop configuration
    */
   public HadoopCatalog(Configuration conf) {
-    this.conf = conf;
-    this.warehouseLocation = conf.get("fs.defaultFS") + "/" + ICEBERG_HADOOP_WAREHOUSE_BASE;
-    this.fs = Util.getFs(new Path(warehouseLocation), conf);
+    this("hadoop", conf, conf.get("fs.defaultFS") + "/" + ICEBERG_HADOOP_WAREHOUSE_BASE);
   }
 
   @Override
-  protected String name() {
-    return "hadoop";
+  public String name() {
+    return catalogName;
   }
 
   @Override
@@ -145,20 +176,13 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
   }
 
   @Override
-  public Table createTable(
-      TableIdentifier identifier, Schema schema, PartitionSpec spec, String location, Map<String, String> properties) {
-    Preconditions.checkArgument(location == null, "Cannot set a custom location for a path-based table");
-    return super.createTable(identifier, schema, spec, null, properties);
-  }
-
-  @Override
   protected boolean isValidIdentifier(TableIdentifier identifier) {
     return true;
   }
 
   @Override
   protected TableOperations newTableOps(TableIdentifier identifier) {
-    return new HadoopTableOperations(new Path(defaultWarehouseLocation(identifier)), conf);
+    return new HadoopTableOperations(new Path(defaultWarehouseLocation(identifier)), fileIO, conf);
   }
 
   @Override
@@ -194,7 +218,7 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
       if (purge && lastMetadata != null) {
         // Since the data files and the metadata files may store in different locations,
         // so it has to call dropTableData to force delete the data file.
-        dropTableData(ops.io(), lastMetadata);
+        CatalogUtil.dropTableData(ops.io(), lastMetadata);
       }
       fs.delete(tablePath, true /* recursive */);
       return true;
@@ -214,13 +238,13 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
         !namespace.isEmpty(),
         "Cannot create namespace with invalid name: %s", namespace);
     if (!meta.isEmpty()) {
-      throw new UnsupportedOperationException("Cannot create namespace " + namespace + " : metadata is not supported");
+      throw new UnsupportedOperationException("Cannot create namespace " + namespace + ": metadata is not supported");
     }
 
     Path nsPath = new Path(warehouseLocation, SLASH.join(namespace.levels()));
 
     if (isNamespace(nsPath)) {
-      throw new AlreadyExistsException("Namespace '%s' already exists!", namespace);
+      throw new AlreadyExistsException("Namespace already exists: %s", namespace);
     }
 
     try {
@@ -242,7 +266,7 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
     try {
       return Stream.of(fs.listStatus(nsPath))
         .map(FileStatus::getPath)
-        .filter(path -> isNamespace(path))
+        .filter(this::isNamespace)
         .map(path -> append(namespace, path.getName()))
         .collect(Collectors.toList());
     } catch (IOException ioe) {
@@ -265,8 +289,11 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
     }
 
     try {
-      return fs.delete(nsPath, false /* recursive */);
+      if (fs.listStatusIterator(nsPath).hasNext()) {
+        throw new NamespaceNotEmptyException("Namespace %s is not empty.", namespace);
+      }
 
+      return fs.delete(nsPath, false /* recursive */);
     } catch (IOException e) {
       throw new RuntimeIOException(e, "Namespace delete failed: %s", namespace);
     }
@@ -308,5 +335,30 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
 
   @Override
   public void close() throws IOException {
+  }
+
+  @Override
+  public String toString() {
+    return MoreObjects.toStringHelper(this)
+        .add("name", catalogName)
+        .add("location", warehouseLocation)
+        .toString();
+  }
+
+  @Override
+  public TableBuilder buildTable(TableIdentifier identifier, Schema schema) {
+    return new HadoopCatalogTableBuilder(identifier, schema);
+  }
+
+  private class HadoopCatalogTableBuilder extends BaseMetastoreCatalogTableBuilder {
+    private HadoopCatalogTableBuilder(TableIdentifier identifier, Schema schema) {
+      super(identifier, schema);
+    }
+
+    @Override
+    public TableBuilder withLocation(String location) {
+      Preconditions.checkArgument(location == null, "Cannot set a custom location for a path-based table");
+      return this;
+    }
   }
 }

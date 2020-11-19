@@ -44,7 +44,6 @@ import org.apache.parquet.column.Dictionary;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
-import org.apache.parquet.schema.DecimalMetadata;
 import org.apache.parquet.schema.PrimitiveType;
 
 /**
@@ -93,7 +92,8 @@ public class VectorizedArrowReader implements VectorizedReader<VectorHolder> {
 
   private enum ReadType {
     FIXED_LENGTH_DECIMAL,
-    INT_LONG_BACKED_DECIMAL,
+    INT_BACKED_DECIMAL,
+    LONG_BACKED_DECIMAL,
     VARCHAR,
     VARBINARY,
     FIXED_WIDTH_BINARY,
@@ -102,7 +102,8 @@ public class VectorizedArrowReader implements VectorizedReader<VectorHolder> {
     LONG,
     FLOAT,
     DOUBLE,
-    TIMESTAMP_MILLIS
+    TIMESTAMP_MILLIS,
+    DICTIONARY
   }
 
   @Override
@@ -113,32 +114,33 @@ public class VectorizedArrowReader implements VectorizedReader<VectorHolder> {
 
   @Override
   public VectorHolder read(VectorHolder reuse, int numValsToRead) {
-    if (reuse == null) {
-      allocateFieldVector(this.vectorizedColumnIterator.producesDictionaryEncodedVector());
+    boolean dictEncoded = vectorizedColumnIterator.producesDictionaryEncodedVector();
+    if (reuse == null || (!dictEncoded && readType == ReadType.DICTIONARY) ||
+        (dictEncoded && readType != ReadType.DICTIONARY)) {
+      allocateFieldVector(dictEncoded);
       nullabilityHolder = new NullabilityHolder(batchSize);
     } else {
       vec.setValueCount(0);
       nullabilityHolder.reset();
     }
-    boolean dictEncoded = vectorizedColumnIterator.producesDictionaryEncodedVector();
     if (vectorizedColumnIterator.hasNext()) {
       if (dictEncoded) {
         vectorizedColumnIterator.nextBatchDictionaryIds((IntVector) vec, nullabilityHolder);
       } else {
         switch (readType) {
           case FIXED_LENGTH_DECIMAL:
-            ((IcebergArrowVectors.DecimalArrowVector) vec).setNullabilityHolder(nullabilityHolder);
             vectorizedColumnIterator.nextBatchFixedLengthDecimal(vec, typeWidth, nullabilityHolder);
             break;
-          case INT_LONG_BACKED_DECIMAL:
-            ((IcebergArrowVectors.DecimalArrowVector) vec).setNullabilityHolder(nullabilityHolder);
-            vectorizedColumnIterator.nextBatchIntLongBackedDecimal(vec, typeWidth, nullabilityHolder);
+          case INT_BACKED_DECIMAL:
+            vectorizedColumnIterator.nextBatchIntBackedDecimal(vec, nullabilityHolder);
+            break;
+          case LONG_BACKED_DECIMAL:
+            vectorizedColumnIterator.nextBatchLongBackedDecimal(vec, nullabilityHolder);
             break;
           case VARBINARY:
             vectorizedColumnIterator.nextBatchVarWidthType(vec, nullabilityHolder);
             break;
           case VARCHAR:
-            ((IcebergArrowVectors.VarcharArrowVector) vec).setNullabilityHolder(nullabilityHolder);
             vectorizedColumnIterator.nextBatchVarWidthType(vec, nullabilityHolder);
             break;
           case FIXED_WIDTH_BINARY:
@@ -180,6 +182,7 @@ public class VectorizedArrowReader implements VectorizedReader<VectorHolder> {
       this.vec = field.createVector(rootAlloc);
       ((IntVector) vec).allocateNew(batchSize);
       this.typeWidth = (int) IntVector.TYPE_WIDTH;
+      this.readType = ReadType.DICTIONARY;
     } else {
       PrimitiveType primitive = columnDescriptor.getPrimitiveType();
       Field arrowField = ArrowSchemaUtil.convert(icebergField);
@@ -189,8 +192,8 @@ public class VectorizedArrowReader implements VectorizedReader<VectorHolder> {
           case JSON:
           case UTF8:
           case BSON:
-            this.vec = new IcebergArrowVectors.VarcharArrowVector(icebergField.name(), rootAlloc);
-            //TODO: Possibly use the uncompressed page size info to set the initial capacity
+            this.vec = arrowField.createVector(rootAlloc);
+            // TODO: Possibly use the uncompressed page size info to set the initial capacity
             vec.setInitialCapacity(batchSize * AVERAGE_VARIABLE_WIDTH_RECORD_SIZE);
             vec.allocateNewSafe();
             this.readType = ReadType.VARCHAR;
@@ -229,9 +232,7 @@ public class VectorizedArrowReader implements VectorizedReader<VectorHolder> {
             this.typeWidth = (int) BigIntVector.TYPE_WIDTH;
             break;
           case DECIMAL:
-            DecimalMetadata decimal = primitive.getDecimalMetadata();
-            this.vec = new IcebergArrowVectors.DecimalArrowVector(icebergField.name(), rootAlloc,
-                decimal.getPrecision(), decimal.getScale());
+            this.vec = arrowField.createVector(rootAlloc);
             ((DecimalVector) vec).allocateNew(batchSize);
             switch (primitive.getPrimitiveTypeName()) {
               case BINARY:
@@ -240,11 +241,11 @@ public class VectorizedArrowReader implements VectorizedReader<VectorHolder> {
                 this.typeWidth = primitive.getTypeLength();
                 break;
               case INT64:
-                this.readType = ReadType.INT_LONG_BACKED_DECIMAL;
+                this.readType = ReadType.LONG_BACKED_DECIMAL;
                 this.typeWidth = (int) BigIntVector.TYPE_WIDTH;
                 break;
               case INT32:
-                this.readType = ReadType.INT_LONG_BACKED_DECIMAL;
+                this.readType = ReadType.INT_BACKED_DECIMAL;
                 this.typeWidth = (int) IntVector.TYPE_WIDTH;
                 break;
               default:
@@ -268,7 +269,7 @@ public class VectorizedArrowReader implements VectorizedReader<VectorHolder> {
             break;
           case BINARY:
             this.vec = arrowField.createVector(rootAlloc);
-            //TODO: Possibly use the uncompressed page size info to set the initial capacity
+            // TODO: Possibly use the uncompressed page size info to set the initial capacity
             vec.setInitialCapacity(batchSize * AVERAGE_VARIABLE_WIDTH_RECORD_SIZE);
             vec.allocateNewSafe();
             this.readType = ReadType.VARBINARY;
@@ -353,7 +354,39 @@ public class VectorizedArrowReader implements VectorizedReader<VectorHolder> {
     }
 
     @Override
-    public void setBatchSize(int batchSize) {}
+    public void setBatchSize(int batchSize) {
+    }
+  }
+
+  /**
+   * A Dummy Vector Reader which doesn't actually read files, instead it returns a dummy
+   * VectorHolder which indicates the constant value which should be used for this column.
+   * @param <T> The constant value to use
+   */
+  public static class ConstantVectorReader<T> extends VectorizedArrowReader {
+    private final T value;
+
+    public ConstantVectorReader(T value) {
+      this.value = value;
+    }
+
+    @Override
+    public VectorHolder read(VectorHolder reuse, int numValsToRead) {
+      return VectorHolder.constantHolder(numValsToRead, value);
+    }
+
+    @Override
+    public void setRowGroupInfo(PageReadStore source, Map<ColumnPath, ColumnChunkMetaData> metadata) {
+    }
+
+    @Override
+    public String toString() {
+      return String.format("ConstantReader: %s", value);
+    }
+
+    @Override
+    public void setBatchSize(int batchSize) {
+    }
   }
 
 }

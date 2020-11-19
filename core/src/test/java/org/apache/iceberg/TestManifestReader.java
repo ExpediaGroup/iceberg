@@ -21,8 +21,12 @@ package org.apache.iceberg;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.apache.iceberg.ManifestEntry.Status;
+import org.apache.iceberg.expressions.Expressions;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
+import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.relocated.com.google.common.collect.Streams;
 import org.apache.iceberg.types.Types;
 import org.junit.Assert;
 import org.junit.Test;
@@ -31,12 +35,9 @@ import org.junit.runners.Parameterized;
 
 @RunWith(Parameterized.class)
 public class TestManifestReader extends TableTestBase {
-  @Parameterized.Parameters
-  public static Object[][] parameters() {
-    return new Object[][] {
-        new Object[] { 1 },
-        new Object[] { 2 },
-    };
+  @Parameterized.Parameters(name = "formatVersion = {0}")
+  public static Object[] parameters() {
+    return new Object[] { 1, 2 };
   }
 
   public TestManifestReader(int formatVersion) {
@@ -51,6 +52,22 @@ public class TestManifestReader extends TableTestBase {
       Assert.assertEquals(Status.EXISTING, entry.status());
       Assert.assertEquals(FILE_A.path(), entry.file().path());
       Assert.assertEquals(1000L, (long) entry.snapshotId());
+    }
+  }
+
+  @Test
+  public void testReaderWithFilterWithoutSelect() throws IOException {
+    ManifestFile manifest = writeManifest(1000L, FILE_A, FILE_B, FILE_C);
+    try (ManifestReader<DataFile> reader = ManifestFiles.read(manifest, FILE_IO)
+        .filterRows(Expressions.equal("id", 0))) {
+      List<String> files = Streams.stream(reader)
+          .map(file -> file.path().toString())
+          .collect(Collectors.toList());
+
+      // note that all files are returned because the reader returns data files that may match, and the partition is
+      // bucketing by data, which doesn't help filter files
+      Assert.assertEquals("Should read the expected files",
+          Lists.newArrayList(FILE_A.path(), FILE_B.path(), FILE_C.path()), files);
     }
   }
 
@@ -103,4 +120,15 @@ public class TestManifestReader extends TableTestBase {
     }
   }
 
+  @Test
+  public void testDataFilePositions() throws IOException {
+    ManifestFile manifest = writeManifest(1000L, FILE_A, FILE_B, FILE_C);
+    try (ManifestReader<DataFile> reader = ManifestFiles.read(manifest, FILE_IO)) {
+      long expectedPos = 0L;
+      for (DataFile file : reader) {
+        Assert.assertEquals("Position should match", (Long) expectedPos, file.pos());
+        expectedPos += 1;
+      }
+    }
+  }
 }

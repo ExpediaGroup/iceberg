@@ -19,26 +19,28 @@
 
 package org.apache.iceberg.spark.data.vectorized;
 
-import io.netty.buffer.ArrowBuf;
 import java.math.BigInteger;
 import java.util.stream.IntStream;
+import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.BitVector;
 import org.apache.arrow.vector.DateDayVector;
+import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.TimeStampMicroTZVector;
 import org.apache.arrow.vector.VarBinaryVector;
+import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.complex.ListVector;
 import org.apache.arrow.vector.complex.StructVector;
-import org.apache.arrow.vector.holders.NullableVarCharHolder;
-import org.apache.iceberg.arrow.vectorized.IcebergArrowVectors;
+import org.apache.arrow.vector.util.DecimalUtility;
 import org.apache.iceberg.arrow.vectorized.VectorHolder;
 import org.apache.parquet.Preconditions;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.Dictionary;
+import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.vectorized.ArrowColumnVector;
@@ -48,7 +50,8 @@ import org.jetbrains.annotations.NotNull;
 
 public class ArrowVectorAccessors {
 
-  private ArrowVectorAccessors() {}
+  private ArrowVectorAccessors() {
+  }
 
   static ArrowVectorAccessor getVectorAccessor(VectorHolder holder) {
     Dictionary dictionary = holder.dictionary();
@@ -133,10 +136,10 @@ public class ArrowVectorAccessors {
       return new FloatAccessor((Float4Vector) vector);
     } else if (vector instanceof Float8Vector) {
       return new DoubleAccessor((Float8Vector) vector);
-    } else if (vector instanceof IcebergArrowVectors.DecimalArrowVector) {
-      return new DecimalAccessor((IcebergArrowVectors.DecimalArrowVector) vector);
-    } else if (vector instanceof IcebergArrowVectors.VarcharArrowVector) {
-      return new StringAccessor((IcebergArrowVectors.VarcharArrowVector) vector);
+    } else if (vector instanceof DecimalVector) {
+      return new DecimalAccessor((DecimalVector) vector);
+    } else if (vector instanceof VarCharVector) {
+      return new StringAccessor((VarCharVector) vector);
     } else if (vector instanceof VarBinaryVector) {
       return new BinaryAccessor((VarBinaryVector) vector);
     } else if (vector instanceof DateDayVector) {
@@ -285,25 +288,22 @@ public class ArrowVectorAccessors {
 
   private static class StringAccessor extends ArrowVectorAccessor {
 
-    private final IcebergArrowVectors.VarcharArrowVector vector;
-    private final NullableVarCharHolder stringResult = new NullableVarCharHolder();
+    private final VarCharVector vector;
 
-    StringAccessor(IcebergArrowVectors.VarcharArrowVector vector) {
+    StringAccessor(VarCharVector vector) {
       super(vector);
       this.vector = vector;
     }
 
     @Override
     final UTF8String getUTF8String(int rowId) {
-      vector.get(rowId, stringResult);
-      if (stringResult.isSet == 0) {
-        return null;
-      } else {
-        return UTF8String.fromAddress(
-            null,
-            stringResult.buffer.memoryAddress() + stringResult.start,
-            stringResult.end - stringResult.start);
-      }
+      int start = vector.getStartOffset(rowId);
+      int end = vector.getEndOffset(rowId);
+
+      return UTF8String.fromAddress(
+          null,
+          vector.getDataBuffer().memoryAddress() + start,
+          end - start);
     }
   }
 
@@ -351,7 +351,7 @@ public class ArrowVectorAccessors {
       this.offsetVector = vector;
       this.decodedDictionary = IntStream.rangeClosed(0, dictionary.getMaxId())
           .mapToObj(dictionary::decodeToBinary)
-          .map(binary -> binary.getBytes())
+          .map(Binary::getBytes)
           .toArray(byte[][]::new);
     }
 
@@ -428,16 +428,17 @@ public class ArrowVectorAccessors {
 
   private static class DecimalAccessor extends ArrowVectorAccessor {
 
-    private final IcebergArrowVectors.DecimalArrowVector vector;
+    private final DecimalVector vector;
 
-    DecimalAccessor(IcebergArrowVectors.DecimalArrowVector vector) {
+    DecimalAccessor(DecimalVector vector) {
       super(vector);
       this.vector = vector;
     }
 
     @Override
     final Decimal getDecimal(int rowId, int precision, int scale) {
-      return Decimal.apply(vector.getObject(rowId), precision, scale);
+      return Decimal.apply(DecimalUtility.getBigDecimalFromArrowBuf(vector.getDataBuffer(), rowId, scale),
+          precision, scale);
     }
   }
 

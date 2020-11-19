@@ -19,16 +19,16 @@
 
 package org.apache.iceberg.mr;
 
-import java.util.function.Function;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.SchemaParser;
-import org.apache.iceberg.catalog.Catalog;
+import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.expressions.Expression;
 
 public class InputFormatConfig {
 
-  private InputFormatConfig() {}
+  private InputFormatConfig() {
+  }
 
   // configuration values for Iceberg input formats
   public static final String REUSE_CONTAINERS = "iceberg.mr.reuse.containers";
@@ -40,10 +40,15 @@ public class InputFormatConfig {
   public static final String READ_SCHEMA = "iceberg.mr.read.schema";
   public static final String SNAPSHOT_ID = "iceberg.mr.snapshot.id";
   public static final String SPLIT_SIZE = "iceberg.mr.split.size";
-  public static final String TABLE_PATH = "iceberg.mr.table.path";
+  public static final String TABLE_IDENTIFIER = "iceberg.mr.table.identifier";
+  public static final String TABLE_LOCATION = "iceberg.mr.table.location";
   public static final String TABLE_SCHEMA = "iceberg.mr.table.schema";
+  public static final String PARTITION_SPEC = "iceberg.mr.table.partition.spec";
   public static final String LOCALITY = "iceberg.mr.locality";
   public static final String CATALOG = "iceberg.mr.catalog";
+  public static final String HADOOP_CATALOG_WAREHOUSE_LOCATION = "iceberg.mr.catalog.hadoop.warehouse.location";
+  public static final String CATALOG_LOADER_CLASS = "iceberg.mr.catalog.loader.class";
+  public static final String EXTERNAL_TABLE_PURGE = "external.table.purge";
 
   public static final String CATALOG_NAME = "iceberg.catalog";
   public static final String HADOOP_CATALOG = "hadoop.catalog";
@@ -52,8 +57,6 @@ public class InputFormatConfig {
   public static final String ICEBERG_SNAPSHOTS_TABLE_SUFFIX = ".snapshots";
   public static final String SNAPSHOT_TABLE = "iceberg.snapshots.table";
   public static final String SNAPSHOT_TABLE_SUFFIX = "__snapshots";
-  public static final String TABLE_LOCATION = "location";
-  public static final String TABLE_NAME = "name";
 
   public enum InMemoryDataModel {
     PIG,
@@ -73,6 +76,10 @@ public class InputFormatConfig {
       conf.setBoolean(LOCALITY, false);
     }
 
+    public Configuration conf() {
+      return conf;
+    }
+
     public ConfigBuilder filter(Expression expression) {
       conf.set(FILTER_EXPRESSION, SerializationUtil.serializeToBase64(expression));
       return this;
@@ -88,8 +95,13 @@ public class InputFormatConfig {
       return this;
     }
 
-    public ConfigBuilder readFrom(String path) {
-      conf.set(TABLE_PATH, path);
+    public ConfigBuilder readFrom(TableIdentifier identifier) {
+      conf.set(TABLE_IDENTIFIER, identifier.toString());
+      return this;
+    }
+
+    public ConfigBuilder readFrom(String location) {
+      conf.set(TABLE_LOCATION, location);
       return this;
     }
 
@@ -126,8 +138,8 @@ public class InputFormatConfig {
       return this;
     }
 
-    public ConfigBuilder catalogFunc(Class<? extends Function<Configuration, Catalog>> catalogFuncClass) {
-      conf.setClass(CATALOG, catalogFuncClass, Function.class);
+    public ConfigBuilder catalogLoader(Class<? extends CatalogLoader> catalogLoader) {
+      conf.setClass(CATALOG_LOADER_CLASS, catalogLoader, CatalogLoader.class);
       return this;
     }
 

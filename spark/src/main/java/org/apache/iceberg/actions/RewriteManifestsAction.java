@@ -33,7 +33,6 @@ import org.apache.iceberg.HasTableOperations;
 import org.apache.iceberg.ManifestFile;
 import org.apache.iceberg.ManifestFiles;
 import org.apache.iceberg.ManifestWriter;
-import org.apache.iceberg.MetadataTableType;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.RewriteManifests;
 import org.apache.iceberg.Snapshot;
@@ -48,6 +47,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.spark.SparkDataFile;
+import org.apache.iceberg.spark.SparkUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.iceberg.util.Tasks;
@@ -65,6 +65,8 @@ import org.apache.spark.sql.internal.SQLConf;
 import org.apache.spark.sql.types.StructType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.apache.iceberg.MetadataTableType.ENTRIES;
 
 /**
  * An action that rewrites manifests in a distributed manner and co-locates metadata for partitions.
@@ -102,7 +104,7 @@ public class RewriteManifestsAction
         table.properties(),
         TableProperties.MANIFEST_TARGET_SIZE_BYTES,
         TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT);
-    this.fileIO = fileIO(table);
+    this.fileIO = SparkUtil.serializableFileIO(table);
 
     // default the staging location to the metadata location
     TableOperations ops = ((HasTableOperations) table).operations();
@@ -173,7 +175,7 @@ public class RewriteManifestsAction
     int numEntries = 0;
 
     for (ManifestFile manifest : matchingManifests) {
-      ValidationException.check(hasFileCounts(manifest), "No file counts in manifest: " + manifest.path());
+      ValidationException.check(hasFileCounts(manifest), "No file counts in manifest: %s", manifest.path());
 
       totalSizeBytes += manifest.length();
       numEntries += manifest.addedFilesCount() + manifest.existingFilesCount() + manifest.deletedFilesCount();
@@ -201,9 +203,7 @@ public class RewriteManifestsAction
         .createDataset(Lists.transform(manifests, ManifestFile::path), Encoders.STRING())
         .toDF("manifest");
 
-    String entriesMetadataTable = metadataTableName(MetadataTableType.ENTRIES);
-    Dataset<Row> manifestEntryDF = spark.read().format("iceberg")
-        .load(entriesMetadataTable)
+    Dataset<Row> manifestEntryDF = BaseSparkAction.loadMetadataTable(spark, table.name(), table().location(), ENTRIES)
         .filter("status < 2") // select only live entries
         .selectExpr("input_file_name() as manifest", "snapshot_id", "sequence_number", "data_file");
 

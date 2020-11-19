@@ -48,14 +48,6 @@ import org.apache.parquet.schema.PrimitiveType;
 
 public class ParquetDictionaryRowGroupFilter {
   private final Expression expr;
-  private transient ThreadLocal<EvalVisitor> visitors = null;
-
-  private EvalVisitor visitor() {
-    if (visitors == null) {
-      this.visitors = ThreadLocal.withInitial(EvalVisitor::new);
-    }
-    return visitors.get();
-  }
 
   public ParquetDictionaryRowGroupFilter(Schema schema, Expression unbound) {
     this(schema, unbound, true);
@@ -75,7 +67,7 @@ public class ParquetDictionaryRowGroupFilter {
    */
   public boolean shouldRead(MessageType fileSchema, BlockMetaData rowGroup,
                             DictionaryPageReadStore dictionaries) {
-    return visitor().eval(fileSchema, rowGroup, dictionaries);
+    return new EvalVisitor().eval(fileSchema, rowGroup, dictionaries);
   }
 
   private static final boolean ROWS_MIGHT_MATCH = true;
@@ -286,8 +278,27 @@ public class ParquetDictionaryRowGroupFilter {
 
       Set<T> dictionary = dict(id, ref.comparator());
 
-      // ROWS_CANNOT_MATCH if all values of the dictionary are not in the set (the intersection is empty)
-      return Sets.intersection(dictionary, literalSet).isEmpty() ? ROWS_CANNOT_MATCH : ROWS_MIGHT_MATCH;
+      // we need to find out the smaller set to iterate through
+      Set<T> smallerSet;
+      Set<T> biggerSet;
+
+      if (literalSet.size() < dictionary.size()) {
+        smallerSet = literalSet;
+        biggerSet = dictionary;
+      } else {
+        smallerSet = dictionary;
+        biggerSet = literalSet;
+      }
+
+      for (T e : smallerSet) {
+        if (biggerSet.contains(e)) {
+          // value sets intersect so rows match
+          return ROWS_MIGHT_MATCH;
+        }
+      }
+
+      // value sets are disjoint so rows don't match
+      return ROWS_CANNOT_MATCH;
     }
 
     @Override

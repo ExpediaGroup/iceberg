@@ -16,9 +16,11 @@
 # under the License.
 
 import time
+from typing import Optional
 
-from iceberg.api import PartitionSpec
+from iceberg.api import PartitionSpec, Schema
 from iceberg.api.types import assign_fresh_ids
+from iceberg.core.table_operations import TableOperations
 from iceberg.core.util import AtomicInteger
 from iceberg.exceptions import ValidationException
 
@@ -28,14 +30,16 @@ class TableMetadata(object):
     TABLE_FORMAT_VERSION = 1
 
     @staticmethod
-    def new_table_metadata(ops, schema, spec, location, properties=None):
+    def new_table_metadata(ops: TableOperations, schema: Schema, spec: PartitionSpec, location: str,
+                           properties: dict = None) -> "TableMetadata":
         last_column_id = AtomicInteger(0)
         fresh_schema = assign_fresh_ids(schema, last_column_id.increment_and_get)
 
         spec_builder = PartitionSpec.builder_for(fresh_schema)
         for field in spec.fields:
             src_name = schema.find_column_name(field.source_id)
-            spec_builder.add(fresh_schema.find_field(src_name).field_id,
+            spec_builder.add(field.source_id,
+                             fresh_schema.find_field(src_name).field_id,
                              field.name,
                              str(field.transform))
 
@@ -51,8 +55,8 @@ class TableMetadata(object):
                  last_column_id, schema, default_spec_id, specs, properties,
                  current_snapshot_id, snapshots, snapshot_log):
         self.ops = ops
-        self.file = file
-        self.location = location
+        self._file = file
+        self._location = location
         self.last_updated_millis = last_updated_millis
         self.last_column_id = last_column_id
         self.schema = schema
@@ -76,6 +80,14 @@ class TableMetadata(object):
 
         if not (len(self.snapshot_by_id) == 0 or self.current_snapshot_id in self.snapshot_by_id):
             raise RuntimeError("Invalid table metadata: Cannot find current version")
+
+    @property
+    def location(self: "TableMetadata") -> str:
+        return self._location
+
+    @property
+    def metadata_location(self: "TableMetadata") -> Optional[str]:
+        return self._file.location() if self._file else None
 
     @property
     def spec(self):

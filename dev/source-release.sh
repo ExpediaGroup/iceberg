@@ -18,13 +18,15 @@
 # under the License.
 #
 
+set -e
+
 if [ -z "$1" ]; then
-  echo "Usage: $0 <version> <rc-num>"
+  echo "Usage: $0 <version-num> <rc-num>"
   exit
 fi
 
 if [ -z "$2" ]; then
-  echo "Usage: $0 <version> <rc-num>"
+  echo "Usage: $0 <version-num> <rc-num>"
   exit
 fi
 
@@ -64,7 +66,7 @@ tarball=$tag.tar.gz
 
 # be conservative and use the release hash, even though git produces the same
 # archive (identical hashes) using the scm tag
-git archive $release_hash --prefix $tag/ -o $tarball .baseline api arrow common core data dev gradle gradlew hive mr orc parquet pig project spark spark-runtime LICENSE NOTICE README.md build.gradle baseline.gradle deploy.gradle tasks.gradle jmh.gradle gradle.properties settings.gradle versions.lock versions.props version.txt
+git archive $release_hash --worktree-attributes --prefix $tag/ -o $tarball
 
 # sign the archive
 gpg --armor --output ${tarball}.asc --detach-sig $tarball

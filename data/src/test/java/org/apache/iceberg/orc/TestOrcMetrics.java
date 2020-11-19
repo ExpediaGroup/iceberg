@@ -26,6 +26,7 @@ import java.util.UUID;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.Files;
 import org.apache.iceberg.Metrics;
+import org.apache.iceberg.MetricsConfig;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.TestMetrics;
 import org.apache.iceberg.data.Record;
@@ -49,6 +50,13 @@ public class TestOrcMetrics extends TestMetrics {
   static final ImmutableSet<Object> BINARY_TYPES = ImmutableSet.of(Type.TypeID.BINARY,
       Type.TypeID.FIXED, Type.TypeID.UUID);
 
+  @Override
+  protected OutputFile createOutputFile() throws IOException {
+    File tmpFolder = temp.newFolder("orc");
+    String filename = UUID.randomUUID().toString();
+    return Files.localOutput(new File(tmpFolder, FileFormat.ORC.addExtension(filename)));
+  }
+
   @Rule
   public TemporaryFolder temp = new TemporaryFolder();
 
@@ -58,36 +66,36 @@ public class TestOrcMetrics extends TestMetrics {
   }
 
   @Override
-  public Metrics getMetrics(InputFile file) {
-    return OrcMetrics.fromInputFile(file);
+  public Metrics getMetrics(Schema schema, Record... records) throws IOException {
+    return getMetrics(schema, MetricsConfig.getDefault(), records);
   }
 
   @Override
-  public InputFile writeRecordsWithSmallRowGroups(Schema schema, Record... records) throws IOException {
+  public Metrics getMetrics(Schema schema, MetricsConfig metricsConfig, Record... records) throws IOException {
+    return getMetrics(schema, createOutputFile(), ImmutableMap.of(), metricsConfig, records);
+  }
+
+  @Override
+  protected Metrics getMetricsForRecordsWithSmallRowGroups(Schema schema, OutputFile outputFile, Record... records) {
     throw new UnsupportedOperationException("supportsSmallRowGroups = " + supportsSmallRowGroups());
   }
 
-  @Override
-  public InputFile writeRecords(Schema schema, Record... records) throws IOException {
-    return writeRecords(schema, ImmutableMap.of(), records);
-  }
-
-  private InputFile writeRecords(Schema schema, Map<String, String> properties, Record... records) throws IOException {
-    File tmpFolder = temp.newFolder("orc");
-    String filename = UUID.randomUUID().toString();
-    OutputFile file = Files.localOutput(new File(tmpFolder, FileFormat.ORC.addExtension(filename)));
-    try (FileAppender<Record> writer = ORC.write(file)
+  private Metrics getMetrics(Schema schema, OutputFile file, Map<String, String> properties,
+                             MetricsConfig metricsConfig, Record... records) throws IOException {
+    FileAppender<Record> writer = ORC.write(file)
         .schema(schema)
         .setAll(properties)
         .createWriterFunc(GenericOrcWriter::buildWriter)
-        .build()) {
-      writer.addAll(Lists.newArrayList(records));
+        .metricsConfig(metricsConfig)
+        .build();
+    try (FileAppender<Record> appender = writer) {
+      appender.addAll(Lists.newArrayList(records));
     }
-    return file.toInputFile();
+    return writer.metrics();
   }
 
   @Override
-  public int splitCount(InputFile inputFile) throws IOException {
+  public int splitCount(InputFile inputFile) {
     return 0;
   }
 
@@ -101,7 +109,7 @@ public class TestOrcMetrics extends TestMetrics {
       Assert.assertFalse("ORC binary field should not have lower bounds.",
           metrics.lowerBounds().containsKey(fieldId));
       Assert.assertFalse("ORC binary field should not have upper bounds.",
-          metrics.lowerBounds().containsKey(fieldId));
+          metrics.upperBounds().containsKey(fieldId));
       return;
     }
     super.assertBounds(fieldId, type, lowerBound, upperBound, metrics);

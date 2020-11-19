@@ -22,14 +22,19 @@ package org.apache.iceberg.parquet;
 import java.lang.reflect.Array;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.apache.avro.util.Utf8;
+import org.apache.iceberg.FieldMetrics;
+import org.apache.iceberg.deletes.PositionDelete;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.types.TypeUtil;
+import org.apache.iceberg.util.DecimalUtil;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.ColumnWriteStore;
 import org.apache.parquet.io.api.Binary;
@@ -70,11 +75,11 @@ public class ParquetValueWriters {
   }
 
   public static UnboxedWriter<Float> floats(ColumnDescriptor desc) {
-    return new UnboxedWriter<>(desc);
+    return new FloatWriter(desc);
   }
 
   public static UnboxedWriter<Double> doubles(ColumnDescriptor desc) {
-    return new UnboxedWriter<>(desc);
+    return new DoubleWriter(desc);
   }
 
   public static PrimitiveWriter<CharSequence> strings(ColumnDescriptor desc) {
@@ -162,6 +167,54 @@ public class ParquetValueWriters {
     }
   }
 
+  private static class FloatWriter extends UnboxedWriter<Float> {
+    private final int id;
+    private long nanCount;
+
+    private FloatWriter(ColumnDescriptor desc) {
+      super(desc);
+      this.id = desc.getPrimitiveType().getId().intValue();
+      this.nanCount = 0;
+    }
+
+    @Override
+    public void write(int repetitionLevel, Float value) {
+      writeFloat(repetitionLevel, value);
+      if (Float.isNaN(value)) {
+        nanCount++;
+      }
+    }
+
+    @Override
+    public Stream<FieldMetrics> metrics() {
+      return Stream.of(new ParquetFieldMetrics(id, nanCount));
+    }
+  }
+
+  private static class DoubleWriter extends UnboxedWriter<Double> {
+    private final int id;
+    private long nanCount;
+
+    private DoubleWriter(ColumnDescriptor desc) {
+      super(desc);
+      this.id = desc.getPrimitiveType().getId().intValue();
+      this.nanCount = 0;
+    }
+
+    @Override
+    public void write(int repetitionLevel, Double value) {
+      writeDouble(repetitionLevel, value);
+      if (Double.isNaN(value)) {
+        nanCount++;
+      }
+    }
+
+    @Override
+    public Stream<FieldMetrics> metrics() {
+      return Stream.of(new ParquetFieldMetrics(id, nanCount));
+    }
+  }
+
   private static class ByteWriter extends UnboxedWriter<Byte> {
     private ByteWriter(ColumnDescriptor desc) {
       super(desc);
@@ -229,38 +282,19 @@ public class ParquetValueWriters {
   private static class FixedDecimalWriter extends PrimitiveWriter<BigDecimal> {
     private final int precision;
     private final int scale;
-    private final int length;
     private final ThreadLocal<byte[]> bytes;
 
     private FixedDecimalWriter(ColumnDescriptor desc, int precision, int scale) {
       super(desc);
       this.precision = precision;
       this.scale = scale;
-      this.length = TypeUtil.decimalRequiredBytes(precision);
-      this.bytes = ThreadLocal.withInitial(() -> new byte[length]);
+      this.bytes = ThreadLocal.withInitial(() -> new byte[TypeUtil.decimalRequiredBytes(precision)]);
     }
 
     @Override
     public void write(int repetitionLevel, BigDecimal decimal) {
-      Preconditions.checkArgument(decimal.scale() == scale,
-          "Cannot write value as decimal(%s,%s), wrong scale: %s", precision, scale, decimal);
-      Preconditions.checkArgument(decimal.precision() <= precision,
-          "Cannot write value as decimal(%s,%s), too large: %s", precision, scale, decimal);
-
-      byte fillByte = (byte) (decimal.signum() < 0 ? 0xFF : 0x00);
-      byte[] unscaled = decimal.unscaledValue().toByteArray();
-      byte[] buf = bytes.get();
-      int offset = length - unscaled.length;
-
-      for (int i = 0; i < length; i += 1) {
-        if (i < offset) {
-          buf[i] = fillByte;
-        } else {
-          buf[i] = unscaled[i - offset];
-        }
-      }
-
-      column.writeBinary(repetitionLevel, Binary.fromReusedByteArray(buf));
+      byte[] binary = DecimalUtil.toReusedFixLengthBytes(precision, scale, decimal, bytes.get());
+      column.writeBinary(repetitionLevel, Binary.fromReusedByteArray(binary));
     }
   }
 
@@ -324,6 +358,11 @@ public class ParquetValueWriters {
     public void setColumnStore(ColumnWriteStore columnStore) {
       writer.setColumnStore(columnStore);
     }
+
+    @Override
+    public Stream<FieldMetrics> metrics() {
+      return writer.metrics();
+    }
   }
 
   public abstract static class RepeatedWriter<L, E> implements ParquetValueWriter<L> {
@@ -378,6 +417,11 @@ public class ParquetValueWriters {
     }
 
     protected abstract Iterator<E> elements(L value);
+
+    @Override
+    public Stream<FieldMetrics> metrics() {
+      return writer.metrics();
+    }
   }
 
   private static class CollectionWriter<E> extends RepeatedWriter<Collection<E>, E> {
@@ -451,6 +495,11 @@ public class ParquetValueWriters {
     }
 
     protected abstract Iterator<Map.Entry<K, V>> pairs(M value);
+
+    @Override
+    public Stream<FieldMetrics> metrics() {
+      return Stream.concat(keyWriter.metrics(), valueWriter.metrics());
+    }
   }
 
   private static class MapWriter<K, V> extends RepeatedKeyValueWriter<Map<K, V>, K, V> {
@@ -505,5 +554,29 @@ public class ParquetValueWriters {
     }
 
     protected abstract Object get(S struct, int index);
+
+    @Override
+    public Stream<FieldMetrics> metrics() {
+      return Arrays.stream(writers).flatMap(ParquetValueWriter::metrics);
+    }
+  }
+
+  public static class PositionDeleteStructWriter<R> extends StructWriter<PositionDelete<R>> {
+    public PositionDeleteStructWriter(StructWriter<?> replacedWriter) {
+      super(Arrays.asList(replacedWriter.writers));
+    }
+
+    @Override
+    protected Object get(PositionDelete<R> delete, int index) {
+      switch (index) {
+        case 0:
+          return delete.path();
+        case 1:
+          return delete.pos();
+        case 2:
+          return delete.row();
+      }
+      throw new IllegalArgumentException("Cannot get value for invalid index: " + index);
+    }
   }
 }

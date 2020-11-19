@@ -30,72 +30,94 @@ import java.util.Map;
  */
 public interface ContentFile<F> {
   /**
-   * @return type of content stored in the file; one of DATA, POSITION_DELETES, or EQUALITY_DELETES
+   * Returns the ordinal position of the file in a manifest, or null if it was not read from a manifest.
+   */
+  Long pos();
+
+  /**
+   * Returns id of the partition spec used for partition metadata.
+   */
+  int specId();
+
+  /**
+   * Returns type of content stored in the file; one of DATA, POSITION_DELETES, or EQUALITY_DELETES.
    */
   FileContent content();
 
   /**
-   * @return fully qualified path to the file, suitable for constructing a Hadoop Path
+   * Returns fully qualified path to the file, suitable for constructing a Hadoop Path.
    */
   CharSequence path();
 
   /**
-   * @return format of the file
+   * Returns format of the file.
    */
   FileFormat format();
 
   /**
-   * @return partition for this file as a {@link StructLike}
+   * Returns partition for this file as a {@link StructLike}.
    */
   StructLike partition();
 
   /**
-   * @return the number of top-level records in the file
+   * Returns the number of top-level records in the file.
    */
   long recordCount();
 
   /**
-   * @return the file size in bytes
+   * Returns the file size in bytes.
    */
   long fileSizeInBytes();
 
   /**
-   * @return if collected, map from column ID to the size of the column in bytes, null otherwise
+   * Returns if collected, map from column ID to the size of the column in bytes, null otherwise.
    */
   Map<Integer, Long> columnSizes();
 
   /**
-   * @return if collected, map from column ID to the count of its non-null values, null otherwise
+   * Returns if collected, map from column ID to the count of its non-null values, null otherwise.
    */
   Map<Integer, Long> valueCounts();
 
   /**
-   * @return if collected, map from column ID to its null value count, null otherwise
+   * Returns if collected, map from column ID to its null value count, null otherwise.
    */
   Map<Integer, Long> nullValueCounts();
 
   /**
-   * @return if collected, map from column ID to value lower bounds, null otherwise
+   * Returns if collected, map from column ID to value lower bounds, null otherwise.
    */
   Map<Integer, ByteBuffer> lowerBounds();
 
   /**
-   * @return if collected, map from column ID to value upper bounds, null otherwise
+   * Returns if collected, map from column ID to value upper bounds, null otherwise.
    */
   Map<Integer, ByteBuffer> upperBounds();
 
   /**
-   * @return metadata about how this file is encrypted, or null if the file is stored in plain
-   *         text.
+   * Returns metadata about how this file is encrypted, or null if the file is stored in plain text.
    */
   ByteBuffer keyMetadata();
 
   /**
-   * @return List of recommended split locations, if applicable, null otherwise.
+   * Returns list of recommended split locations, if applicable, null otherwise.
+   * <p>
    * When available, this information is used for planning scan tasks whose boundaries
    * are determined by these offsets. The returned list must be sorted in ascending order.
    */
   List<Long> splitOffsets();
+
+  /**
+   * Returns the set of field IDs used for equality comparison, in equality delete files.
+   * <p>
+   * An equality delete file may contain additional data fields that are not used by equality
+   * comparison. The subset of columns in a delete file to be used in equality comparison are
+   * tracked by ID. Extra columns can be used to reconstruct changes and metrics from extra
+   * columns are used during job planning.
+   *
+   * @return IDs of the fields used in equality comparison with the records in this delete file
+   */
+  List<Integer> equalityFieldIds();
 
 
   /**
