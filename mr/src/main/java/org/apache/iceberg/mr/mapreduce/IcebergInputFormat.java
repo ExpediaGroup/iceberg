@@ -36,6 +36,7 @@ import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.DataFile;
+import org.apache.iceberg.DataTask;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.PartitionSpec;
@@ -48,7 +49,9 @@ import org.apache.iceberg.TableScan;
 import org.apache.iceberg.avro.Avro;
 import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.data.GenericDeleteFilter;
+import org.apache.iceberg.data.GenericRecord;
 import org.apache.iceberg.data.IdentityPartitionConverters;
+import org.apache.iceberg.data.Record;
 import org.apache.iceberg.data.avro.DataReader;
 import org.apache.iceberg.data.orc.GenericOrcReader;
 import org.apache.iceberg.data.parquet.GenericParquetReaders;
@@ -69,7 +72,9 @@ import org.apache.iceberg.parquet.Parquet;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.types.Type;
+import org.apache.iceberg.types.Types;
 import org.apache.iceberg.types.TypeUtil;
+import org.apache.iceberg.util.DateTimeUtil;
 import org.apache.iceberg.util.PartitionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -250,6 +255,8 @@ public class IcebergInputFormat<T> extends InputFormat<Void, T> {
         case PARQUET:
           iterable = newParquetIterable(inputFile, currentTask, readSchema);
           break;
+        case METADATA:
+          return newMetadataIterable(currentTask.asDataTask(), readSchema);
         default:
           throw new UnsupportedOperationException(
               String.format("Cannot read %s file: %s", file.format().name(), file.path()));
@@ -354,6 +361,40 @@ public class IcebergInputFormat<T> extends InputFormat<Void, T> {
       }
 
       return applyResidualFiltering(orcReadBuilder.build(), task.residual(), readSchema);
+    }
+
+    private CloseableIterable<T> newMetadataIterable(DataTask task, Schema readSchema) {
+      CloseableIterable asStructLikeRows = task.rows();
+      return CloseableIterable.transform(asStructLikeRows, row -> convertToRecord((StructLike) row, readSchema));
+    }
+
+    private Record convertToRecord(StructLike structLike, Schema readSchema) {
+      Record record = GenericRecord.create(readSchema);
+      for(int i = 0; i < readSchema.columns().size(); i++) {
+        Type type = readSchema.findType(readSchema.columns().get(i).name());
+        record.set(i, fieldValue(type, structLike, i, readSchema));
+      }
+      return record;
+    }
+
+    private Object fieldValue(Type type, StructLike structLike, int column, Schema readSchema) {
+      if (type instanceof Types.TimestampType) {
+        Long value = (Long) structLike.get(column, javaType(readSchema, column));
+        return ((Types.TimestampType) type).shouldAdjustToUTC() ? DateTimeUtil.timestamptzFromMicros(value) : DateTimeUtil.timestampFromMicros(value);
+      } else {
+        return structLike.get(column, javaType(readSchema, column));
+      }
+    }
+
+    private Class javaType(Schema readSchema, int column) {
+      Type id = readSchema.findType(readSchema.columns().get(column).name());
+      if (id.isMapType()) {
+        return Map.class;
+      } else if (id.isListType()) {
+        return List.class;
+      } else {
+        return id.typeId().javaClass();
+      }
     }
 
     private Map<Integer, ?> constantsMap(FileScanTask task, BiFunction<Type, Object, Object> converter) {

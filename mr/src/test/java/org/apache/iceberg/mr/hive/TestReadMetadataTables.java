@@ -18,7 +18,7 @@
  */
 
 package org.apache.iceberg.mr.mapred;
-
+/*
 import com.klarna.hiverunner.HiveShell;
 import com.klarna.hiverunner.StandaloneHiveRunner;
 import com.klarna.hiverunner.annotations.HiveSQL;
@@ -49,10 +49,10 @@ import org.junit.runner.RunWith;
 import static org.apache.iceberg.types.Types.NestedField.optional;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.junit.Assert.assertEquals;
-
-@RunWith(StandaloneHiveRunner.class)
+*/
+//@RunWith(StandaloneHiveRunner.class)
 public class TestReadMetadataTables {
-
+/*
   @HiveSQL(files = {}, autoStart = true)
   private HiveShell shell;
 
@@ -206,4 +206,31 @@ public class TestReadMetadataTables {
     List<Object[]> resultLatestTable = shell.executeStatement("SELECT * FROM source_db.table_b");
     assertEquals(1, resultLatestTable.size());
   }
+
+
+
+  @Ignore("TODO: re-enable this test when snapshot functionality added")
+  @Test
+  public void testAllRowsIncludeSnapshotId() {
+    shell.execute("CREATE DATABASE source_db");
+    shell.execute(new StringBuilder()
+        .append("CREATE TABLE source_db.table_a ")
+        .append("ROW FORMAT SERDE 'org.apache.iceberg.mr.mapred.IcebergSerDe' ")
+        .append("STORED AS ")
+        .append("INPUTFORMAT 'org.apache.iceberg.mr.mapred.IcebergInputFormat' ")
+        .append("OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat' ")
+        .append("LOCATION '")
+        .append(tableLocation.getAbsolutePath())
+        .append("'")
+        .toString());
+
+    List<Object[]> result = shell.executeStatement("SELECT * FROM source_db.table_a");
+
+    assertEquals(4, result.size());
+    assertEquals(snapshotId, result.get(0)[2]);
+    assertEquals(snapshotId, result.get(1)[2]);
+    assertEquals(snapshotId, result.get(2)[2]);
+    assertEquals(snapshotId, result.get(3)[2]);
+  }
+  */
 }
