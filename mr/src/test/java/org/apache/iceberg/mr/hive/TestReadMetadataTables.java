@@ -1,63 +1,69 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
-package org.apache.iceberg.mr.mapred;
-/*
-import com.klarna.hiverunner.HiveShell;
-import com.klarna.hiverunner.StandaloneHiveRunner;
-import com.klarna.hiverunner.annotations.HiveSQL;
-import java.io.File;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.iceberg.DataFile;
-import org.apache.iceberg.FileFormat;
-import org.apache.iceberg.PartitionSpec;
-import org.apache.iceberg.Schema;
-import org.apache.iceberg.Snapshot;
-import org.apache.iceberg.Table;
-import org.apache.iceberg.catalog.TableIdentifier;
-import org.apache.iceberg.data.Record;
-import org.apache.iceberg.hadoop.HadoopCatalog;
-import org.apache.iceberg.mr.TestHelpers;
-import org.apache.iceberg.relocated.com.google.common.collect.Lists;
-import org.apache.iceberg.types.Types;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.junit.runner.RunWith;
+package org.apache.iceberg.mr.hive;
 
-import static org.apache.iceberg.types.Types.NestedField.optional;
-import static org.apache.iceberg.types.Types.NestedField.required;
-import static org.junit.Assert.assertEquals;
-*/
-//@RunWith(StandaloneHiveRunner.class)
+import org.junit.*;
+import org.junit.rules.TemporaryFolder;
+
+import java.io.IOException;
+import java.util.Map;
+
 public class TestReadMetadataTables {
-/*
-  @HiveSQL(files = {}, autoStart = true)
-  private HiveShell shell;
 
   @Rule
   public TemporaryFolder temp = new TemporaryFolder();
+  private TestTables testTables;
+  private static TestHiveShell shell;
+
+  @BeforeClass
+  public static void beforeClass() {
+    shell = new TestHiveShell();
+    shell.setHiveConfValue("hive.notification.event.poll.interval", "-1");
+    shell.setHiveConfValue("hive.tez.exec.print.summary", "true");
+    shell.start();
+  }
+
+  @AfterClass
+  public static void afterClass() {
+    shell.stop();
+  }
+
+  @Before
+  public void before() throws IOException {
+    shell.openSession();
+    //TODO: sort out if we need test tables...
+    //testTables = testTables(shell.metastore().hiveConf(), temp);
+    for (Map.Entry<String, String> property : testTables.properties().entrySet()) {
+      shell.setHiveSessionValue(property.getKey(), property.getValue());
+    }
+    //TODO: do we want to test this with tez and mr as params?
+    //shell.setHiveSessionValue("hive.execution.engine", executionEngine);
+    shell.setHiveSessionValue("hive.jar.directory", temp.getRoot().getAbsolutePath());
+    shell.setHiveSessionValue("tez.staging-dir", temp.getRoot().getAbsolutePath());
+  }
+
+  @After
+  public void after() throws Exception {
+    shell.closeSession();
+    shell.metastore().reset();
+    // HiveServer2 thread pools are using thread local Hive -> HMSClient objects. These are not cleaned up when the
+    // HiveServer2 is stopped. Only Finalizer closes the HMS connections.
+    System.gc();
+  }
+  /*
+
 
   private File tableLocation;
   private Configuration conf = new Configuration();
