@@ -14,17 +14,46 @@
 
 package org.apache.iceberg.mr.hive;
 
-import org.junit.*;
+import java.io.IOException;
+import java.util.List;
+import org.apache.iceberg.FileFormat;
+import org.apache.iceberg.PartitionSpec;
+import org.apache.iceberg.Schema;
+import org.apache.iceberg.Table;
+import org.apache.iceberg.data.Record;
+import org.apache.iceberg.mr.TestHelper;
+import org.apache.iceberg.types.Types;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Rule;
+import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
-import java.io.IOException;
-import java.util.Map;
+import static org.apache.iceberg.types.Types.NestedField.required;
 
 public class TestReadMetadataTables {
 
   @Rule
   public TemporaryFolder temp = new TemporaryFolder();
+
   private TestTables testTables;
+
+  private static final Schema CUSTOMER_SCHEMA = new Schema(
+      required(1, "customer_id", Types.LongType.get()),
+      required(2, "first_name", Types.StringType.get())
+  );
+
+  private static final List<Record> CUSTOMER_RECORDS = TestHelper.RecordsBuilder.newInstance(CUSTOMER_SCHEMA)
+      .add(0L, "Alice")
+      .add(1L, "Bob")
+      .add(2L, "Trudy")
+      .build();
+
+  private static final PartitionSpec SPEC = PartitionSpec.unpartitioned();
+
   private static TestHiveShell shell;
 
   @BeforeClass
@@ -43,11 +72,10 @@ public class TestReadMetadataTables {
   @Before
   public void before() throws IOException {
     shell.openSession();
-    //TODO: sort out if we need test tables...
-    //testTables = testTables(shell.metastore().hiveConf(), temp);
-    for (Map.Entry<String, String> property : testTables.properties().entrySet()) {
-      shell.setHiveSessionValue(property.getKey(), property.getValue());
-    }
+    testTables = new TestTables.HadoopTestTables(shell.metastore().hiveConf(), temp);
+    //for (Map.Entry<String, String> property : testTables.properties().entrySet()) {
+    //  shell.setHiveSessionValue(property.getKey(), property.getValue());
+    //}
     //TODO: do we want to test this with tez and mr as params?
     //shell.setHiveSessionValue("hive.execution.engine", executionEngine);
     shell.setHiveSessionValue("hive.jar.directory", temp.getRoot().getAbsolutePath());
@@ -61,6 +89,62 @@ public class TestReadMetadataTables {
     // HiveServer2 thread pools are using thread local Hive -> HMSClient objects. These are not cleaned up when the
     // HiveServer2 is stopped. Only Finalizer closes the HMS connections.
     System.gc();
+  }
+
+  @Test
+  public void bla() throws IOException {
+    createTable("customers", CUSTOMER_SCHEMA, CUSTOMER_RECORDS);
+    List<Object[]> rows = shell.executeStatement("SELECT * FROM default.customers");
+
+    Assert.assertEquals(3, rows.size());
+    Assert.assertArrayEquals(new Object[] {0L, "Alice"}, rows.get(0));
+    Assert.assertArrayEquals(new Object[] {1L, "Bob"}, rows.get(1));
+    Assert.assertArrayEquals(new Object[] {2L, "Trudy"}, rows.get(2));
+  }
+
+  @Test
+  public void testReadSnapshotTable() throws IOException {
+    Table table = createTable("customers", CUSTOMER_SCHEMA, CUSTOMER_RECORDS);
+    System.out.println("XXX: " + table.location());
+    shell.executeStatement(new StringBuilder()
+        .append("CREATE TABLE default.customer_snapshots ")
+        .append("STORED BY '").append(HiveIcebergStorageHandler.class.getName()).append("' ")
+        .append("LOCATION '")
+        .append(table.location() + "/default/customers#snapshots'")
+        .toString());
+
+    List<Object[]> result = shell.executeStatement("SELECT * FROM default.customer_snapshots");
+
+    Assert.assertEquals(3, result.size());
+  }
+
+  private Table createTable(String tableName, Schema schema, List<Record> records)
+      throws IOException {
+    Table table = createIcebergTable(tableName, schema, records);
+    createHiveTable(tableName, table.location());
+    return table;
+  }
+
+  protected Table createIcebergTable(String tableName, Schema schema, List<Record> records)
+      throws IOException {
+    String identifier = testTables.identifier("default." + tableName);
+    TestHelper helper = new TestHelper(
+        shell.metastore().hiveConf(), testTables.tables(), identifier, schema, SPEC, FileFormat.PARQUET, temp);
+    Table table = helper.createTable();
+
+    if (!records.isEmpty()) {
+      helper.appendToTable(helper.writeFile(null, records));
+    }
+
+    return table;
+  }
+
+  protected void createHiveTable(String tableName, String location) {
+    shell.executeStatement(String.format(
+        "CREATE TABLE default.%s " +
+            "STORED BY '%s' " +
+            "LOCATION '%s'",
+        tableName, HiveIcebergStorageHandler.class.getName(), location));
   }
   /*
 
@@ -95,22 +179,6 @@ public class TestReadMetadataTables {
 
     List<Snapshot> snapshots = Lists.newArrayList(table.snapshots().iterator());
     snapshotId = snapshots.get(0).snapshotId();
-  }
-
-  @Test
-  public void testReadSnapshotTable() {
-    shell.execute("CREATE DATABASE source_db");
-
-    shell.execute(new StringBuilder()
-            .append("CREATE TABLE source_db.table_a ")
-            .append("STORED BY 'org.apache.iceberg.mr.mapred.IcebergStorageHandler' ")
-            .append("LOCATION '")
-            .append(tableLocation.getAbsolutePath() + "/source_db/table_a#snapshots'")
-            .toString());
-
-    List<Object[]> result = shell.executeStatement("SELECT * FROM source_db.table_a");
-
-    assertEquals(3, result.size());
   }
 
   @Test
@@ -213,30 +281,5 @@ public class TestReadMetadataTables {
     assertEquals(1, resultLatestTable.size());
   }
 
-
-
-  @Ignore("TODO: re-enable this test when snapshot functionality added")
-  @Test
-  public void testAllRowsIncludeSnapshotId() {
-    shell.execute("CREATE DATABASE source_db");
-    shell.execute(new StringBuilder()
-        .append("CREATE TABLE source_db.table_a ")
-        .append("ROW FORMAT SERDE 'org.apache.iceberg.mr.mapred.IcebergSerDe' ")
-        .append("STORED AS ")
-        .append("INPUTFORMAT 'org.apache.iceberg.mr.mapred.IcebergInputFormat' ")
-        .append("OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat' ")
-        .append("LOCATION '")
-        .append(tableLocation.getAbsolutePath())
-        .append("'")
-        .toString());
-
-    List<Object[]> result = shell.executeStatement("SELECT * FROM source_db.table_a");
-
-    assertEquals(4, result.size());
-    assertEquals(snapshotId, result.get(0)[2]);
-    assertEquals(snapshotId, result.get(1)[2]);
-    assertEquals(snapshotId, result.get(2)[2]);
-    assertEquals(snapshotId, result.get(3)[2]);
-  }
   */
 }
