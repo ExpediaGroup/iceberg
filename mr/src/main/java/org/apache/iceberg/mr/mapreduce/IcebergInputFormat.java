@@ -371,6 +371,10 @@ public class IcebergInputFormat<T> extends InputFormat<Void, T> {
     private Record convertToRecord(StructLike structLike, Schema readSchema) {
       Record record = GenericRecord.create(readSchema);
       for(int i = 0; i < readSchema.columns().size(); i++) {
+
+        System.out.println("READ SCHEMA COLUMN NAME: " + readSchema.columns().get(i).name());
+        System.out.println("READ SCHEMA COLUMN TYPE: " + readSchema.columns().get(i).type());
+
         Type type = readSchema.findType(readSchema.columns().get(i).name());
         record.set(i, fieldValue(type, structLike, i, readSchema));
       }

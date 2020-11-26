@@ -90,7 +90,7 @@ public class TestReadMetadataTables {
     // HiveServer2 is stopped. Only Finalizer closes the HMS connections.
     System.gc();
   }
-
+/*
   @Test
   public void bla() throws IOException {
     createTable("customers", CUSTOMER_SCHEMA, CUSTOMER_RECORDS);
@@ -101,7 +101,7 @@ public class TestReadMetadataTables {
     Assert.assertArrayEquals(new Object[] {1L, "Bob"}, rows.get(1));
     Assert.assertArrayEquals(new Object[] {2L, "Trudy"}, rows.get(2));
   }
-
+*/
   @Test
   public void testReadSnapshotTable() throws IOException {
     Table table = createTable("customers", CUSTOMER_SCHEMA, CUSTOMER_RECORDS);
@@ -110,12 +110,18 @@ public class TestReadMetadataTables {
         .append("CREATE TABLE default.customer_snapshots ")
         .append("STORED BY '").append(HiveIcebergStorageHandler.class.getName()).append("' ")
         .append("LOCATION '")
-        .append(table.location() + "/default/customers#snapshots'")
+        .append(table.location() + "#snapshots'")
         .toString());
-
+    System.out.println("XXX SNAPSHOT TABLE CREATED, ATTEMPTING TO READ SNAPSHOTS BACK");
     List<Object[]> result = shell.executeStatement("SELECT * FROM default.customer_snapshots");
 
     Assert.assertEquals(3, result.size());
+    for (Object[] row : result) {
+      System.out.println("Row:");
+      for (Object field : row) {
+        System.out.println("Field: " + field);
+      }
+    }
   }
 
   private Table createTable(String tableName, Schema schema, List<Record> records)

@@ -20,8 +20,10 @@
 package org.apache.iceberg.mr.hive.serde.objectinspector;
 
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.TimeZone;
 import org.apache.hadoop.hive.serde2.io.TimestampWritable;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.AbstractPrimitiveJavaObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.TimestampObjectInspector;
@@ -33,6 +35,16 @@ public abstract class IcebergTimestampObjectInspector extends AbstractPrimitiveJ
   private static final IcebergTimestampObjectInspector INSTANCE_WITH_ZONE = new IcebergTimestampObjectInspector() {
     @Override
     LocalDateTime toLocalDateTime(Object o) {
+      if (o instanceof Long) {
+        //TODO: this is almost certainly incorrect, just putting this here to stop exception
+        // and see what happens next
+        Long timestamp = (Long)o;
+        LocalDateTime localDateTime =
+            LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp),
+                TimeZone.getDefault().toZoneId());
+        System.out.println("Returning local date time " + localDateTime);
+        return localDateTime;
+      }
       return ((OffsetDateTime) o).toLocalDateTime();
     }
   };
